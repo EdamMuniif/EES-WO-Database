@@ -56,8 +56,7 @@
         /* ── Layout ── */
         .app { display: flex; height: 100vh; overflow: hidden; position: relative; }
         .sidebar { width: 240px; min-width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; z-index: 50; }
-        .logo { padding: 15px 20px 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; text-align: center; }
-        .sidebar-logo-img { max-height: 35px; margin-bottom: 5px; }
+        .logo { padding: 25px 20px 20px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; text-align: center; }
         .nav-grp { padding: 14px 12px 4px; }
         .nav-grp-lbl { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; padding: 0 8px; margin-bottom: 4px; }
         .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); transition: all .15s; }
@@ -528,6 +527,122 @@ window.saveWOUpdates = async function(woId) {
     catch(e) { console.error(e); showToast("❌ Save failed — check connection", true); }
 };
 
+// ── NEW Professional PDF Export ───────────────────────────────────
+
+window.exportDashboardPDF = function() {
+    if (typeof html2pdf === 'undefined') { showToast("PDF compiler loading... try again."); return; }
+    showToast("⏳ Generating EES Manpower Report...");
+
+    const stats = {};
+    let totalHead = 0, totalPresent = 0, totalLeave = 0;
+
+    WORKERS.forEach(w => {
+        if (!stats[w.designation]) {
+            stats[w.designation] = { headCount: 0, present: 0, onLeave: 0 };
+        }
+        stats[w.designation].headCount++;
+        totalHead++;
+
+        const lv = workerLeaves[w.rc];
+        if (lv && lv.type && lv.type !== 'None') {
+            stats[w.designation].onLeave++;
+            totalLeave++;
+        } else {
+            stats[w.designation].present++;
+            totalPresent++;
+        }
+    });
+
+    let tableRows = '';
+    for (const [desig, data] of Object.entries(stats)) {
+        tableRows += `
+            <tr>
+                <td style="border: 1px solid #000; padding: 10px; font-weight: 500;">${desig}</td>
+                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.headCount}</td>
+                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.present}</td>
+                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.onLeave}</td>
+            </tr>
+        `;
+    }
+
+    const reportDiv = document.createElement('div');
+    reportDiv.style.width = '800px'; 
+    reportDiv.style.padding = '40px';
+    reportDiv.style.backgroundColor = '#ffffff';
+    reportDiv.style.color = '#000000';
+    reportDiv.style.fontFamily = "'DM Sans', sans-serif";
+    
+    const d = new Date();
+    const day = d.getDate();
+    const suffix = ["th", "st", "nd", "rd"][(day % 10 > 3 || Math.floor(day % 100 / 10) === 1) ? 0 : day % 10];
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const dateStr = `${day}${suffix} ${months[d.getMonth()]} ${d.getFullYear()}`;
+
+    reportDiv.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+            <img src="1000156318.png" style="height: 60px; object-fit: contain;" alt="MTCC Logo" onerror="this.style.display='none'">
+            <div style="text-align: center; flex: 1; padding-top: 15px;">
+                <h2 style="margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; text-decoration: underline;">EES MANPOWER REPORT</h2>
+            </div>
+            <div style="text-align: right; font-size: 14px; font-weight: 600; padding-top: 20px;">
+                ${dateStr}
+            </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 60px; font-size: 14px;">
+            <thead>
+                <tr style="background-color: #f8fafc;">
+                    <th style="border: 1px solid #000; padding: 12px; text-align: left; font-weight: 700;">Designation</th>
+                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">Head Count</th>
+                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">Present</th>
+                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">On-Leave</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+                <tr style="font-weight: 700; background-color: #f1f5f9;">
+                    <td style="border: 1px solid #000; padding: 12px; text-align: right;">Total</td>
+                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalHead}</td>
+                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalPresent}</td>
+                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalLeave}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div style="display: flex; justify-content: space-between; margin-top: 80px;">
+            <div style="text-align: left; width: 250px;">
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 40px;">Prepared by:</div>
+                <div style="border-bottom: 1px solid #000; height: 10px; margin-bottom: 5px;"></div>
+                <div style="font-weight: 700; font-size: 14px;">${currentUser.name}</div>
+                <div style="font-size: 12px; color: #475569;">${currentUser.designation}</div>
+            </div>
+            <div style="text-align: left; width: 250px;">
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 40px;">Approved by:</div>
+                <div style="border-bottom: 1px solid #000; height: 10px; margin-bottom: 5px;"></div>
+                <div style="font-weight: 700; font-size: 14px;"><br/></div>
+                <div style="font-size: 12px; color: #475569;"><br/></div>
+            </div>
+        </div>
+    `;
+
+    reportDiv.style.position = 'absolute';
+    reportDiv.style.left = '-9999px';
+    document.body.appendChild(reportDiv);
+
+    const opt = {
+        margin:       0.5,
+        filename:     `EES_Manpower_Report_${new Date().toISOString().slice(0,10)}.pdf`,
+        image:        { type: 'jpeg', quality: 1 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(reportDiv).save().then(() => {
+        document.body.removeChild(reportDiv);
+        showToast("✅ Report Downloaded!");
+    });
+};
+
 // ── Excel Export ──────────────────────────────────────────────────
 
 window.exportExcel = function() {
@@ -542,14 +657,6 @@ window.exportExcel = function() {
     try{if(window.XLSX){const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"EEW");const o=XLSX.write(wb,{bookType:'xlsx',type:'array'});url=URL.createObjectURL(new Blob([o],{type:'application/octet-stream'}));fn+=".xlsx";isX=true;}}catch(e){}
     if(!isX){const h=Object.keys(rows[0]).join(","),r=rows.map(o=>Object.values(o).map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");url=URL.createObjectURL(new Blob([h+"\n"+r],{type:'text/csv'}));fn+=".csv";}
     document.body.insertAdjacentHTML('beforeend',`<div class="overlay" id="dlm" onclick="if(event.target===this)this.remove()"><div class="modal" style="max-width:380px;background:var(--surface);"><div class="modal-head"><div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;">Export Ready 📊</div><button onclick="document.getElementById('dlm').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;">✕</button></div><div class="modal-body" style="text-align:center;padding:30px;"><div style="color:var(--muted);font-size:13px;margin-bottom:20px;">Your data is compiled and ready to download.</div><a href="${url}" download="${fn}" class="btn btn-primary" style="text-decoration:none;padding:14px;width:100%;justify-content:center;font-size:14px;" onclick="setTimeout(()=>document.getElementById('dlm').remove(),500)">⬇️ Download ${isX?'Excel':'CSV'}</a><button class="btn btn-ghost" style="margin-top:10px;width:100%;justify-content:center;" onclick="document.getElementById('dlm').remove()">Cancel</button></div></div></div>`);
-};
-
-window.exportDashboardPDF = function() {
-    if(typeof html2pdf==='undefined'){showToast("PDF loading...");return;}
-    showToast("⏳ Generating PDF...");
-    const el=document.getElementById('dashboard-content');
-    const bg=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()||'#000';
-    html2pdf().set({margin:[.5,.5,.5,.5],filename:`EES_Report_${new Date().toISOString().slice(0,10)}.pdf`,image:{type:'jpeg',quality:1},html2canvas:{scale:2,backgroundColor:bg,useCORS:true},jsPDF:{unit:'in',format:'a3',orientation:'portrait'}}).from(el).save().then(()=>showToast("✅ PDF Downloaded!"));
 };
 
 // ── Excel Import ──────────────────────────────────────────────────
@@ -646,15 +753,14 @@ function getSidebarHTML() {
             const t=snap.val()||0;
             const online=(Date.now()-t)<300000;
             const el=document.getElementById('viewer-status');
-            if(el) el.innerHTML=online?'<span style="color:var(--green);font-weight:700;">🟢 Online</span>':'<span style="color:var(--muted2);">⚪ Offline</span>';
+            if(el) el.innerHTML=online?'<span style="color:var(--green);font-weight:700;">🟢 Online</span>':'<span style="color:var(--red);font-weight:600;">🔴 Offline</span>';
         });
-        onlineHtml=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);"><span style="color:var(--text);font-weight:600;">A. Miushaan (Viewer)</span><span id="viewer-status"><span style="color:var(--muted2);">⚪ Offline</span></span></div>`;
+        onlineHtml=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);"><span style="color:var(--text);font-weight:600;">Ahmed Miushaan</span><span id="viewer-status"><span style="color:var(--red);font-weight:600;">🔴 Offline</span></span></div>`;
     }
     return `
     <aside class="sidebar ${isSidebarOpen?'show':''}">
         <div class="logo">
-            <img src="1000156318.png" alt="MTCC" class="sidebar-logo-img">
-            <div style="font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1px;">EES WO Database</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1px;line-height:1.2;margin-top:10px;margin-bottom:5px;">EES WO CONTROL<br>DATABASE</div>
         </div>
         <div class="nav-grp"><div class="nav-grp-lbl">Main</div>
             <div class="nav-item ${view==='dashboard'?'active':''}" onclick="setView('dashboard')"><span>📊</span> Dashboard</div>
@@ -693,8 +799,8 @@ function renderApp() {
             <div class="login-title">EES WO CONTROL DATABASE</div>
             <div class="login-subtitle">MTCC</div>
             <div class="login-inp-group">
-                <label class="login-lbl">Email</label>
-                <input id="login-u" class="login-inp" type="text" placeholder="your.name@mtcc.com.mv" onkeydown="if(event.key==='Enter')handleLogin()">
+                <label class="login-lbl">Email / Username</label>
+                <input id="login-u" class="login-inp" type="text" placeholder="Enter username or email" onkeydown="if(event.key==='Enter')handleLogin()">
                 <label class="login-lbl">Password</label>
                 <div class="pwd-container">
                     <input id="login-p" class="login-inp" type="password" placeholder="Enter password" style="padding-right:40px" onkeydown="if(event.key==='Enter')handleLogin()">
@@ -742,11 +848,976 @@ function renderApp() {
                 <div class="ts-item"><div class="ts-val" style="color:var(--green)">${tC}</div><div class="ts-lbl">Completed</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--red)">${tCn}</div><div class="ts-lbl">Cancelled</div></div>
             </div></div>
-            <div><div class="sec-title" style="color:var(--red);">🚨 Urgent & Critical</div><div class="wo-list">
+            <div><div class="sec-title" style="color:var(--red);">🚨 Urgent & Critical Active WOs</div><div class="wo-list">
                 ${uc.length===0?`<div style="padding:18px;color:var(--muted);background:var(--card);border-radius:8px;">No Urgent/Critical items.</div>`:''}
                 ${uc.map(o=>`<div class="wo-card" style="border-left-color:${PRI_CFG[o.priority].color}" onclick="selectOrder('${o.id}');setView('orders')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog">Prog: ${o.overallProgress}%</div></div></div>`).join('')}
             </div></div>
-            <div><div class="sec-title" style="color:var(--green);">🟢 Ongoing WOs</div><div class="wo-list">
+            <div><div class="sec-title" style="color:var(--green);">🟢 Ongoing Active WOs</div><div class="wo-list">
+                ${og.length===0?`<div style="padding:18px;color:var(--muted);background:var(--card);border-radius:8px;">No Ongoing items.</div>`:''}
+                ${og.map(o=>`<div class="wo-card ongoing-glow" onclick="selectOrder('${o.id}');setView('orders')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog">Prog: ${o.overallProgress}%</div></div></div>`).join('')}
+            </div></div>
+        </div>`;
+    }
+
+    // ── Orders / Completed ──
+    else if(view==="orders"||view==="completed") {
+        const isc=(view==="completed");
+        const base=orders.filter(o=>isc?o.overallProgress===100:o.overallProgress<100);
+        const assets=Array.from(new Set(base.map(o=>o.asset))).filter(Boolean).sort();
+        const fil=base.filter(o=>filterAsset==="All"||o.asset===filterAsset);
+        contentHtml=`
+        <div style="margin-bottom:20px;"><label style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;display:block;font-weight:600;">Filter by Asset</label>
+        <select class="filter-dropdown" onchange="setFilter(this.value)"><option value="All" ${filterAsset==="All"?"selected":""}>All Assets</option>${assets.map(a=>`<option value="${a}" ${filterAsset===a?"selected":""}>${a}</option>`).join('')}</select></div>
+        <div class="wo-list">${fil.length===0?`<div style="text-align:center;color:var(--muted);padding:40px;">No ${isc?'completed':'active'} work orders.</div>`:''}
+        ${fil.map(o=>{const on=o.tasks.some(t=>t.status==="Ongoing");return`<div class="wo-card ${on&&!isc?'ongoing-glow':''}" style="${!on||isc?`border-left-color:${PRI_CFG[o.priority].color}`:''}" onclick="selectOrder('${o.id}')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog" style="${isc?'color:var(--green)':''}">${o.overallProgress}%</div></div></div>`;}).join('')}</div>`;
+    }
+
+    // ── Workers ──
+    else if(view==="workers") {
+        contentHtml=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;">`+
+        WORKERS.map(w=>{
+            const wos=orders.filter(o=>o.assignees?.includes(w.rc));
+            const act=wos.filter(o=>o.tasks.some(t=>t.status==="Ongoing")).length;
+            const lv=workerLeaves[w.rc];
+            const lvB=lv&&lv.type!=='None'?`<div style="background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:4px 8px;border-radius:4px;margin-top:8px;display:inline-block;">🔴 ${lv.type}${lv.from&&lv.to?` (${formatDateNice(lv.from)} – ${formatDateNice(lv.to)})`:''}</div>`:'';
+            const md=isViewer?'':`<div class="menu-dots" onclick="event.stopPropagation();openLeaveModal('${w.rc}')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></div>`;
+            return`<div class="worker-card" onclick="selectWorker('${w.rc}')">${md}<div style="display:flex;gap:12px;align-items:center;"><div class="avc" style="width:44px;height:44px;font-size:14px;">${ini(w.name)}</div><div><div style="font-weight:700;font-size:15px;color:var(--text);padding-right:28px;">${w.name}</div><div style="font-size:12px;color:var(--muted);">${w.designation} · RC ${w.rc}</div></div></div>${lvB}<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;"><div style="font-size:15px;font-weight:700;">${wos.length} <span style="font-size:10px;color:var(--muted);">Total WOs</span></div><div style="font-size:11px;font-weight:600;color:var(--blue);">${act} Ongoing</div></div></div>`;
+        }).join('')+`</div>`;
+    }
+
+    // ── Upload ──
+    else if(view==="upload") {
+        contentHtml=isViewer?`<div style="text-align:center;padding:50px;color:var(--muted);">No permission to view this page.</div>`:`
+        <div style="max-width:520px;margin:0 auto;">
+            <div class="sec-title" style="text-align:center;">Import / Manage Data</div>
+            <div style="text-align:center;color:var(--muted);font-size:13px;line-height:1.6;margin:12px 0 16px;">Select the <strong>Scope Master</strong> Excel file.<br>Only <strong>EEW</strong> records will be imported and saved to Firebase.</div>
+            <div style="text-align:center;font-size:13px;margin-bottom:20px;">Last import: <span style="color:var(--blue);font-weight:600;">${lastUpdate}</span></div>
+            <div class="upload-zone" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)" onclick="document.getElementById('f-in').click()">
+                <input id="f-in" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
+                <div style="font-size:46px;margin-bottom:12px;">📂</div>
+                <div style="font-size:16px;font-weight:600;margin-bottom:4px;">Click to Browse</div>
+                <div style="font-size:12px;color:var(--muted);">Or drag and drop your Excel file here</div>
+            </div>
+            <div style="margin-top:28px;padding-top:22px;border-top:1px dashed var(--border);">
+                <button class="btn" style="background:var(--red);color:#fff;width:100%;padding:14px;font-size:14px;justify-content:center;" onclick="clearDatabase()">🗑️ Clear Entire Database</button>
+            </div>
+        </div>`;
+    }
+
+    // ── Leave Modal ──
+    if(leaveModalWorker&&view==="workers") {
+        const w=WORKERS.find(x=>x.rc===leaveModalWorker);
+        const lv=workerLeaves[w.rc]||{type:'None',from:'',to:''};
+        const sd=(lv.type&&lv.type!=='None')?'flex':'none';
+        const ft=isViewer?`<button class="btn btn-ghost" onclick="closeLeaveModal()">Close</button>`:`<button class="btn btn-ghost" onclick="closeLeaveModal()">Cancel</button><button class="btn btn-primary" onclick="saveLeaveUpdates('${w.rc}')">💾 Save</button>`;
+        detailHtml=`<div class="overlay" onclick="if(event.target===this)closeLeaveModal()"><div class="modal" style="max-width:400px;"><div class="modal-head"><div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;">Leave Status</div><button onclick="closeLeaveModal()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;">✕</button></div><div class="modal-body"><div style="font-weight:700;font-size:16px;margin-bottom:16px;">${w.name}</div><label class="plbl">Leave Type</label><select id="l-type" class="select" ${dis} style="margin-bottom:14px;" onchange="document.getElementById('l-dates').style.display=this.value==='None'?'none':'flex'"><option value="None" ${lv.type==='None'?'selected':''}>Active (No Leave)</option><option value="Annual Leave" ${lv.type==='Annual Leave'?'selected':''}>Annual Leave</option><option value="Sick Leave" ${lv.type==='Sick Leave'?'selected':''}>Sick Leave</option><option value="FRL" ${lv.type==='FRL'?'selected':''}>FRL</option></select><div id="l-dates" style="display:${sd};flex-direction:column;gap:14px;"><div><label class="plbl">From</label><input type="date" id="l-from" class="input" ${dis} value="${lv.from||''}"></div><div><label class="plbl">To</label><input type="date" id="l-to" class="input" ${dis} value="${lv.to||''}"></div></div></div><div class="modal-foot">${ft}</div></div></div>`;
+    }
+
+    // ── Worker Profile Modal ──
+    if(selectedWorker&&!leaveModalWorker&&view==="workers") {
+        const w=WORKERS.find(x=>x.rc===selectedWorker);
+        const wos=orders.filter(o=>o.assignees?.includes(w.rc));
+        const act=wos.filter(o=>o.tasks.some(t=>t.status==="Ongoing")).length;
+        const wh=wos.length===0?`<div style="font-size:13px;color:var(--muted);text-align:center;padding:18px;background:var(--bg);border-radius:8px;">No assigned work orders.</div>`:`<div style="display:grid;gap:8px;">`+wos.map(o=>`<div style="background:var(--bg);border:1px solid var(--border);padding:12px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="openWOFromWorker('${o.id}')"><div><div style="font-weight:700;">${o.id}</div><div style="font-size:11px;color:var(--muted);">${o.asset}</div></div><div style="text-align:right;">${PTagHTML(o.priority)}<div style="font-size:11px;font-weight:700;margin-top:4px;">${o.overallProgress}%</div></div></div>`).join('')+`</div>`;
+        detailHtml=`<div class="overlay" onclick="if(event.target===this)closeWorkerModal()"><div class="modal" style="max-width:500px;"><div class="modal-head"><div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;">Employee Profile</div><button onclick="closeWorkerModal()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;">✕</button></div><div class="modal-body"><div style="display:flex;align-items:center;gap:15px;margin-bottom:22px;"><div class="avc" style="width:56px;height:56px;font-size:18px;">${ini(w.name)}</div><div><div style="font-weight:700;font-size:20px;">${w.name}</div><div style="font-size:13px;color:var(--blue);font-weight:600;">${w.designation}</div></div></div><div class="d-meta" style="grid-template-columns:1fr;"><div style="display:flex;justify-content:space-between;"><span>RC Number</span><span>${w.rc}</span></div><div style="display:flex;justify-content:space-between;"><span>Phone</span><span>${w.phone||'—'}</span></div><div style="display:flex;justify-content:space-between;"><span>Email</span><span>${w.email||'—'}</span></div></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><label class="plbl" style="margin:0;">Assigned WOs (${wos.length})</label><span style="font-size:11px;font-weight:600;color:var(--blue);">${act} Ongoing</span></div>${wh}</div></div></div>`;
+    }
+
+    // ── WO Detail Modal ──
+    if(selectedWO&&(view==="orders"||view==="completed")) {
+        const wo=orders.find(o=>o.id===selectedWO);
+        if(wo) {
+            const tags=wo.assignees.map(rc=>{const w=WORKERS.find(x=>x.rc===rc);const rb=isViewer?'':`<span class="atag-x" onclick="removeAssignee('${rc}')">✕</span>`;return`<div class="atag">${w?w.name.split(" ")[0]:rc} ${rb}</div>`;}).join('');
+            const ft=isViewer?`<button class="btn btn-ghost" onclick="selectOrder(null)">Close</button>`:`<button class="btn btn-ghost" onclick="selectOrder(null)">Cancel</button><button class="btn btn-primary" style="padding:10px 30px;" onclick="saveWOUpdates('${wo.id}')">💾 Save</button>`;
+            detailHtml=`<div class="overlay" onclick="if(event.target===this)selectOrder(null)"><div class="modal"><div class="modal-head"><div style="font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;">${wo.id}</div><button onclick="selectOrder(null)" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;">✕</button></div><div class="modal-body">
+            <div class="d-meta"><div>Asset: <span>${wo.asset}</span></div><div>Date: <span>${formatDateNice(wo.date)}</span></div><div>SR No: <span>${wo.sr||'—'}</span></div><div>SVO No: <span>${wo.svo||'—'}</span></div></div>
+            <div style="margin-bottom:22px;"><label class="plbl">WO Priority</label><select id="wo-priority" class="select" ${dis}><option value="Minor" ${wo.priority==="Minor"?'selected':''}>Minor</option><option value="Major" ${wo.priority==="Major"?'selected':''}>Major</option><option value="Urgent" ${wo.priority==="Urgent"?'selected':''}>Urgent</option><option value="Critical" ${wo.priority==="Critical"?'selected':''}>Critical</option></select></div>
+            <div class="assign-wrap"><label class="plbl">Assigned Team</label>${!isViewer?`<select class="select" onchange="addAssignee(this.value);this.value='';" style="margin-bottom:10px;"><option value="">+ Assign employee...</option>${WORKERS.filter(w=>!wo.assignees.includes(w.rc)).map(w=>`<option value="${w.rc}">${w.name} (${w.designation})</option>`).join('')}</select>`:''}<div class="assign-tags">${tags}</div></div>
+            <div><label class="plbl">Tasks (${wo.tasks.length})</label>${wo.tasks.length===0?'<div style="font-size:12px;color:var(--muted);">No tasks for this WO.</div>':''}
+            ${wo.tasks.map((t,i)=>`<div class="task-card"><div class="task-head">${t.taskNo}: ${t.details}</div><div class="task-body"><div><label class="plbl">Status</label><select id="t-stat-${i}" class="select" ${dis}><option ${t.status==="Pending"?'selected':''}>Pending</option><option ${t.status==="Ongoing"?'selected':''}>Ongoing</option><option ${t.status==="Onhold"?'selected':''}>Onhold</option><option ${t.status==="Completed"?'selected':''}>Completed</option><option ${t.status==="Cancelled"?'selected':''}>Cancelled</option></select></div><div><label class="plbl">Progress %</label><input type="number" id="t-prog-${i}" class="input" ${dis} value="${t.progress}" min="0" max="100"></div><div><label class="plbl">Start Date</label><input type="date" id="t-start-${i}" class="input" ${dis} value="${t.startDate}">${t.startDate?`<div style="font-size:10px;color:var(--muted);margin-top:3px;">${formatDateNice(t.startDate)}</div>`:''}</div><div><label class="plbl">Complete Date</label><input type="date" id="t-end-${i}" class="input" ${dis} value="${t.completeDate}">${t.completeDate?`<div style="font-size:10px;color:var(--muted);margin-top:3px;">${formatDateNice(t.completeDate)}</div>`:''}</div><div class="task-full"><label class="plbl">Remarks</label><input type="text" id="t-rem-${i}" class="input" ${dis} value="${t.remarks}" placeholder="Notes..."></div></div></div>`).join('')}
+            </div></div><div class="modal-foot">${ft}</div></div></div>`;
+        }
+    }
+
+    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content">${contentHtml}</div>${detailHtml}</div></div></div>`;
+}
+
+// ── Init: check if user already signed in ─────────────────────────
+auth.onAuthStateChanged(async user => {
+    if(user) {
+        const profile = USER_ROLES[user.email];
+        if(profile) {
+            currentUser=profile; loggedIn=true; view="dashboard";
+            showLoad("Loading your data...");
+            try { await dbLoadAll(); } catch(e) { console.error(e); }
+            hideLoad(); renderApp();
+            startRealtimeSync();
+            db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+            db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
+        } else {
+            hideLoad(); renderApp();
+        }
+    } else {
+        hideLoad(); renderApp();
+    }
+});
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EES WO CONTROL DATABASE</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        *, ::before, ::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #000000; --surface: #1c1c1e; --card: #1c1c1e; --border: #38383a;
+            --blue: #0a84ff; --green: #32d74b; --red: #ff453a; --orange: #ff9f0a;
+            --text: #ffffff; --muted: #98989d; --muted2: #636366;
+            --login-bg: #000000; --login-btn: #0a84ff;
+        }
+        [data-theme="light"] {
+            --bg: #f2f2f7; --surface: #ffffff; --card: #ffffff; --border: #c6c6c8;
+            --text: #000000; --muted: #8e8e93; --muted2: #aeaeb2;
+            --blue: #007aff; --green: #34c759; --red: #ff3b30; --orange: #ff9500;
+            --login-bg: #f2f2f7; --login-btn: #007aff;
+        }
+
+        body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; transition: background 0.3s, color 0.3s; }
+        input, select, textarea, button { font-family: inherit; }
+
+        /* ── Loading overlay ── */
+        #loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+        .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
+        .loading-msg { color: #fff; margin-top: 14px; font-size: 14px; font-weight: 500; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Login ── */
+        .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: var(--login-bg); background-image: url('1000156322.png'); background-repeat: no-repeat; background-position: bottom right; background-size: 40% auto; padding: 15px; }
+        .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 50px 30px; width: 380px; max-width: 100%; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .login-title { font-family: 'Rajdhani', sans-serif; font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.2; margin-bottom: 2px; }
+        .login-subtitle { font-family: 'Rajdhani', sans-serif; font-size: 18px; font-weight: 600; color: var(--blue); letter-spacing: 4px; margin-bottom: 35px; }
+        .login-inp-group { text-align: left; margin-bottom: 20px; }
+        .login-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); display: block; margin-bottom: 6px; font-weight: 600; }
+        .login-inp { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 12px 14px; font-size: 13px; outline: none; margin-bottom: 12px; transition: border-color .15s; }
+        .login-inp:focus { border-color: var(--blue); }
+        .pwd-container { position: relative; }
+        .pwd-toggle { position: absolute; right: 12px; top: 12px; cursor: pointer; color: var(--muted); user-select: none; display: flex; align-items: center; justify-content: center; }
+        .pwd-toggle svg { transition: all 0.2s; }
+        .login-btn { width: 100%; padding: 13px; background: var(--login-btn); color: #fff; font-weight: 600; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; transition: opacity .15s; display: flex; justify-content: center; align-items: center; gap: 8px; }
+        .login-btn:hover { opacity: 0.85; }
+        .login-err { color: var(--red); font-size: 12px; margin-bottom: 14px; margin-top: -5px; text-align: left; }
+
+        /* ── Layout ── */
+        .app { display: flex; height: 100vh; overflow: hidden; position: relative; }
+        .sidebar { width: 240px; min-width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; z-index: 50; }
+        .logo { padding: 25px 20px 20px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; text-align: center; }
+        .nav-grp { padding: 14px 12px 4px; }
+        .nav-grp-lbl { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; padding: 0 8px; margin-bottom: 4px; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); transition: all .15s; }
+        .nav-item:hover { background: var(--bg); color: var(--text); }
+        .nav-item.active { background: rgba(10,132,255,0.1); color: var(--blue); }
+        .sidebar-foot { margin-top: auto; padding: 18px 15px; border-top: 1px solid var(--border); }
+        .user-card { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .avc { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff; flex-shrink: 0; background: linear-gradient(135deg, var(--blue), #4f46e5); }
+        .user-name { font-size: 13px; font-weight: 600; color: var(--text); }
+        .user-role { font-size: 11px; color: var(--muted); }
+        .theme-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+        .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--border); transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--blue); }
+        input:checked + .slider:before { transform: translateX(16px); }
+        .logout-text { color: var(--red); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s; display: inline-block; padding-top: 8px; }
+        .logout-text:hover { opacity: 0.7; }
+
+        /* ── Main ── */
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; width: 100%; }
+        .topbar { padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface); flex-shrink: 0; }
+        .page-title { font-family: 'Rajdhani', sans-serif; font-size: 20px; font-weight: 700; }
+        .menu-btn { display: none; background: none; border: none; color: var(--text); font-size: 24px; cursor: pointer; margin-right: 15px; }
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+        .btn-primary { background: var(--blue); color: #fff; } .btn-primary:hover { opacity: .85; }
+        .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); } .btn-ghost:hover { background: var(--border); }
+        .body-wrap { flex: 1; display: flex; overflow: hidden; position: relative; }
+        .content { flex: 1; overflow-y: auto; padding: 25px; }
+
+        /* ── Dashboard ── */
+        .sec-title { font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+        .task-stats { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 10px; margin-bottom: 25px; background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid var(--border); }
+        .ts-item { text-align: center; flex: 1; min-width: 60px; }
+        .ts-val { font-size: 22px; font-weight: 700; color: var(--text); font-family: 'Rajdhani', sans-serif; }
+        .ts-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; font-weight: 600; }
+
+        /* ── WO Cards ── */
+        .filter-dropdown { width: 100%; max-width: 300px; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 500; outline: none; cursor: pointer; margin-bottom: 20px; }
+        .filter-dropdown:focus { border-color: var(--blue); }
+        .wo-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px; }
+        .wo-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; transition: all .15s; border-left: 4px solid transparent; }
+        .wo-card:hover { border-color: var(--blue); background: var(--surface); }
+        .wo-card.ongoing-glow { background: rgba(50,215,75,0.08); border-color: var(--green); border-left-color: var(--green); }
+        .wo-card.ongoing-glow:hover { background: rgba(50,215,75,0.15); }
+        .wo-col { display: flex; flex-direction: column; gap: 5px; }
+        .wo-col.left  { align-items: flex-start; text-align: left; flex: 1.4; min-width: 0; }
+        .wo-col.center{ align-items: center; text-align: center; flex: 1; min-width: 0; }
+        .wo-col.right { align-items: flex-end; text-align: right; flex: 1; min-width: 0; }
+        .wo-id    { font-family: 'Rajdhani', sans-serif; font-size: 16px; color: var(--text); font-weight: 700; white-space: nowrap; }
+        .wo-asset { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .wo-date  { font-size: 13px; color: var(--text); font-weight: 500; white-space: nowrap; }
+        .wo-tasks { font-size: 12px; color: var(--muted2); font-weight: 600; white-space: nowrap; }
+        .wo-prog  { font-size: 15px; font-weight: 700; color: var(--text); font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5px; }
+        .ptag { font-family: 'Rajdhani', sans-serif; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px; text-transform: uppercase; display: inline-block; white-space: nowrap; }
+
+        /* ── Modals ── */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 15px; }
+        .modal { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 750px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.5); overflow: hidden; }
+        .modal-head { padding: 20px 25px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--surface); }
+        .modal-body { padding: 25px; overflow-y: auto; flex: 1; }
+        .modal-foot { padding: 15px 25px; border-top: 1px solid var(--border); background: var(--surface); display: flex; justify-content: flex-end; gap: 10px; }
+        .d-meta { background: var(--card); border: 1px solid var(--border); padding: 15px; border-radius: 10px; font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; color: var(--muted); margin-bottom: 20px; }
+        .d-meta span { color: var(--text); font-weight: 600; }
+        .plbl { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; display: block; font-weight: 600; }
+        .select { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; cursor: pointer; }
+        .select:focus { border-color: var(--blue); }
+        .select:disabled, .input:disabled { opacity: 0.6; cursor: not-allowed; }
+        .input { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; }
+        .input:focus { border-color: var(--blue); }
+
+        /* ── Assignments ── */
+        .assign-wrap { background: var(--card); border: 1px solid var(--border); padding: 15px; border-radius: 10px; margin-bottom: 25px; }
+        .assign-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .atag { background: rgba(10,132,255,0.15); color: var(--blue); border: 1px solid rgba(10,132,255,0.3); padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .atag-x { cursor: pointer; color: var(--blue); opacity: 0.7; font-size: 14px; line-height: 1; }
+        .atag-x:hover { opacity: 1; color: var(--red); }
+
+        /* ── Task Cards ── */
+        .task-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 15px; overflow: hidden; }
+        .task-head { background: var(--card); padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; color: var(--text); }
+        .task-body { padding: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .task-full { grid-column: 1 / -1; }
+
+        /* ── Upload ── */
+        .upload-zone { border: 2px dashed var(--border); border-radius: 14px; padding: 60px 20px; text-align: center; cursor: pointer; transition: all .2s; background: var(--card); margin-top: 20px; }
+        .upload-zone:hover { border-color: var(--blue); background: rgba(10,132,255,0.05); }
+
+        /* ── Worker Cards ── */
+        .worker-card { background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid var(--border); transition: all 0.2s; cursor: pointer; position: relative; }
+        .worker-card:hover { border-color: var(--blue); background: var(--surface); }
+        .menu-dots { position: absolute; top: 15px; right: 15px; cursor: pointer; color: var(--muted); padding: 5px; border-radius: 50%; transition: background 0.2s; }
+        .menu-dots:hover { background: var(--bg); color: var(--text); }
+
+        /* ── Toast ── */
+        .toast { position: fixed; bottom: 22px; right: 22px; z-index: 200; background: var(--green); color: #fff; padding: 12px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; box-shadow: 0 8px 30px rgba(0,0,0,.3); animation: pop .2s ease; }
+        .toast.error { background: var(--red); }
+        @keyframes pop { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: translateY(0) } }
+
+        /* ── Mobile ── */
+        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 45; }
+        @media (max-width: 768px) {
+            .menu-btn { display: block; }
+            .sidebar { position: fixed; top: 0; left: 0; bottom: 0; transform: translateX(-100%); }
+            .sidebar.show { transform: translateX(0); }
+            .sidebar-overlay.show { display: block; }
+            .wo-card { padding: 14px 12px; gap: 5px; }
+            .wo-id { font-size: 14px; } .wo-asset { font-size: 11px; } .wo-date { font-size: 11px; }
+            .wo-tasks { font-size: 10px; } .wo-prog { font-size: 13px; } .ptag { font-size: 9px; padding: 2px 6px; }
+            .task-body { grid-template-columns: 1fr; }
+            .d-meta { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-root"></div>
+<div id="toast-container"></div>
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-msg" id="loading-msg">Starting up...</div>
+</div>
+
+<script>
+// ── STEP 1: FIREBASE CONFIGURATION ──────────────────────────────
+const firebaseConfig = {
+    apiKey: "AIzaSyCU0sZN9LRTdXjI62J2v-vtML-wYMfF80c",
+    authDomain: "ees-wo-database.firebaseapp.com",
+    databaseURL: "https://ees-wo-database-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "ees-wo-database",
+    storageBucket: "ees-wo-database.firebasestorage.app",
+    messagingSenderId: "979788754009",
+    appId: "1:979788754009:web:a3334a5dc6d036b23d5548",
+    measurementId: "G-8VEQ08N504"
+};
+// ─────────────────────────────────────────────────────────────────
+
+firebase.initializeApp(firebaseConfig);
+const db   = firebase.database();
+const auth = firebase.auth();
+
+// ── User role map ─────────────────────────────────────────────────
+const USER_ROLES = {
+    'adam.muneef@mtcc.com.mv':    { rc:'7485', name:'Adam Muneef',    designation:'Senior Electrician',  role:'admin'  },
+    'ahmed.miushaan@mtcc.com.mv': { rc:'5794', name:'Ahmed Miushaan', designation:'Project Coordinator', role:'viewer' }
+};
+
+const PRI_CFG = {
+    "Minor":    { color: "#8e8e93" },
+    "Major":    { color: "#ffcc00" },
+    "Urgent":   { color: "#ff9500" },
+    "Critical": { color: "#ff3b30" }
+};
+
+const WORKERS = [
+    { rc:"844",   name:"Mohamed Abdullah",        designation:"Senior Technical Manager", phone:"",        email:"" },
+    { rc:"1015",  name:"Yoosuf Niyaz",            designation:"Outpost Service Manager",  phone:"",        email:"" },
+    { rc:"4123",  name:"Hussain Sunil",            designation:"Technical Assistant",      phone:"",        email:"" },
+    { rc:"5992",  name:"MD Soharab Hossain",       designation:"Electrician",              phone:"",        email:"" },
+    { rc:"6025",  name:"Ishag Moosa",              designation:"Senior Electrician",       phone:"",        email:"" },
+    { rc:"6031",  name:"Zahangir Alam",            designation:"Senior Electrician",       phone:"",        email:"" },
+    { rc:"7079",  name:"Ali Mafaz",                designation:"Technical Assistant",      phone:"",        email:"" },
+    { rc:"7485",  name:"Adam Muneef",              designation:"Senior Electrician",       phone:"9515707", email:"adam.muneef@mtcc.com.mv" },
+    { rc:"10856", name:"Hassan Uzain Sodig",       designation:"Electrician",              phone:"",        email:"" },
+    { rc:"12730", name:"Mohamed Jaisham Ibrahim",  designation:"Technical Assistant",      phone:"",        email:"" },
+    { rc:"12866", name:"Selvaraj Rajesh",          designation:"Electrician",              phone:"",        email:"" },
+    { rc:"12936", name:"Navedul Hasan",            designation:"Electrician",              phone:"",        email:"" },
+    { rc:"12944", name:"MD Reyaz Ansari",          designation:"Electrician",              phone:"",        email:"" },
+    { rc:"12965", name:"Shiva Kumar Anil Kumar",   designation:"AC Technician",            phone:"",        email:"" },
+    { rc:"12966", name:"Shibu Moni",               designation:"AC Technician",            phone:"",        email:"" },
+    { rc:"13163", name:"Ragunath Ramadoss",        designation:"AC Technician",            phone:"",        email:"" }
+];
+
+const ini = n => (n||"").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+const pageLabels = { dashboard:"Dashboard", orders:"Active Orders", completed:"WO Completed", upload:"Manage Data", workers:"EES Team" };
+
+// ── Date helpers ──────────────────────────────────────────────────
+function formatForInput(val) {
+    if(!val || String(val).trim()===""||String(val).trim()==="-") return "";
+    let s=String(val).trim(), y,m,d;
+    try {
+        if(s.includes('/')) { let p=s.split('/'); if(p.length===3){d=+p[0];m=+p[1];y=+p[2];if(m>12&&d<=12){let t=d;d=m;m=t;}if(y<100)y+=2000;} }
+        else if(s.includes('-')) { let p=s.split('-'); if(p.length===3){if(p[0].length===4){y=+p[0];m=+p[1];d=+p[2];}else{d=+p[0];y=+p[2];if(y<100)y+=2000;const mn=["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];m=mn.findIndex(x=>p[1].toUpperCase().includes(x))+1;if(m===0)m=+p[1];}}}
+        else if(!isNaN(parseFloat(s))&&parseFloat(s)>20000){let o=new Date(Math.round((parseFloat(s)-25569)*86400*1000));y=o.getUTCFullYear();m=o.getUTCMonth()+1;d=o.getUTCDate();}
+        else{let o=new Date(s);if(!isNaN(o.getTime())){y=o.getFullYear();m=o.getMonth()+1;d=o.getDate();}}
+        if(y&&m&&d&&y>=2000&&y<=2100) return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    } catch(e) {}
+    return "";
+}
+
+function formatDateNice(ds) {
+    if(!ds||ds.includes("1970")||ds.includes("1899")) return "-";
+    const p=ds.split('-'); if(p.length!==3) return ds;
+    const y=+p[0],mo=+p[1]-1,d=+p[2]; if(y<2000) return "-";
+    const mn=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const sx=["th","st","nd","rd"][(d%10>3||Math.floor(d%100/10)===1)?0:d%10];
+    return `${d}${sx} ${mn[mo]} ${y}`;
+}
+
+const isBadDate = ds => !ds||ds===""||ds.includes("1970")||ds.includes("1899");
+
+// ── App State ─────────────────────────────────────────────────────
+let loggedIn=false, currentUser=null, loginErr="", view="dashboard";
+let orders=[], workerLeaves={};
+let selectedWO=null, selectedWorker=null, leaveModalWorker=null;
+let filterAsset="All", isLightMode=false, isSidebarOpen=false, lastUpdate="Never";
+let realtimeListeners = [];
+
+// ── Loading UI ────────────────────────────────────────────────────
+function showLoad(msg="Loading...") {
+    document.getElementById('loading-msg').textContent = msg;
+    document.getElementById('loading-overlay').style.display = 'flex';
+}
+function hideLoad() {
+    document.getElementById('loading-overlay').style.display = 'none';
+}
+
+// ── Toast ─────────────────────────────────────────────────────────
+window.showToast = function(msg, isError=false) {
+    const tc = document.getElementById('toast-container');
+    tc.innerHTML = `<div class="toast${isError?' error':''}">${msg}</div>`;
+    setTimeout(() => { tc.innerHTML=''; }, 3500);
+};
+
+// ── Firebase DB Functions ─────────────────────────────────────────
+
+// Save a single work order + its tasks to Firebase
+async function dbSaveWO(wo) {
+    const woData = {
+        id: wo.id, asset: wo.asset, date: wo.date, sr: wo.sr||"",
+        svo: wo.svo||"", priority: wo.priority,
+        overallProgress: wo.overallProgress,
+        assignees: wo.assignees||[],
+        tasks: wo.tasks||[]
+    };
+    await db.ref(`ees_wo/${wo.id}`).set(woData);
+}
+
+// Save all changed WOs in one batch (used after Excel import)
+async function dbBatchSave(changedWOs) {
+    const updates = {};
+    changedWOs.forEach(wo => {
+        updates[`ees_wo/${wo.id}`] = {
+            id: wo.id, asset: wo.asset, date: wo.date, sr: wo.sr||"",
+            svo: wo.svo||"", priority: wo.priority,
+            overallProgress: wo.overallProgress,
+            assignees: wo.assignees||[],
+            tasks: wo.tasks||[]
+        };
+    });
+    await db.ref().update(updates);
+}
+
+// Save leave for one worker
+async function dbSaveLeave(rc, data) {
+    if(!data || data.type==='None') {
+        await db.ref(`ees_leaves/${rc}`).remove();
+    } else {
+        await db.ref(`ees_leaves/${rc}`).set({ type: data.type, from: data.from||"", to: data.to||"" });
+    }
+}
+
+// Save last import timestamp
+async function dbSaveLastUpdate(ts) {
+    await db.ref('ees_meta/lastUpdate').set(ts);
+}
+
+// Load all data from Firebase once
+async function dbLoadAll() {
+    const [woSnap, leavesSnap, metaSnap] = await Promise.all([
+        db.ref('ees_wo').once('value'),
+        db.ref('ees_leaves').once('value'),
+        db.ref('ees_meta').once('value')
+    ]);
+
+    const woData = woSnap.val() || {};
+    orders = Object.values(woData).map(wo => ({
+        id: wo.id||"",
+        asset: wo.asset||"",
+        date: wo.date||"",
+        sr: wo.sr||"",
+        svo: wo.svo||"",
+        priority: wo.priority||"Minor",
+        overallProgress: wo.overallProgress||0,
+        assignees: Array.isArray(wo.assignees) ? wo.assignees : [],
+        tasks: Array.isArray(wo.tasks) ? wo.tasks : []
+    }));
+
+    const lvData = leavesSnap.val() || {};
+    workerLeaves = {};
+    Object.entries(lvData).forEach(([rc, lv]) => {
+        if(lv && lv.type && lv.type !== 'None') workerLeaves[rc] = lv;
+    });
+
+    const meta = metaSnap.val() || {};
+    lastUpdate = meta.lastUpdate || "Never";
+}
+
+// ── Real-time listener: auto-refresh when any device changes data ──
+function startRealtimeSync() {
+    stopRealtimeSync();
+
+    const woRef = db.ref('ees_wo');
+    const handler = woRef.on('value', snap => {
+        if(!loggedIn) return;
+        const data = snap.val() || {};
+        orders = Object.values(data).map(wo => ({
+            id: wo.id||"", asset: wo.asset||"", date: wo.date||"",
+            sr: wo.sr||"", svo: wo.svo||"",
+            priority: wo.priority||"Minor",
+            overallProgress: wo.overallProgress||0,
+            assignees: Array.isArray(wo.assignees) ? wo.assignees : [],
+            tasks: Array.isArray(wo.tasks) ? wo.tasks : []
+        }));
+        renderApp();
+    });
+    realtimeListeners.push({ ref: woRef, handler });
+
+    const lvRef = db.ref('ees_leaves');
+    const lvHandler = lvRef.on('value', snap => {
+        if(!loggedIn) return;
+        const data = snap.val() || {};
+        workerLeaves = {};
+        Object.entries(data).forEach(([rc, lv]) => {
+            if(lv && lv.type && lv.type !== 'None') workerLeaves[rc] = lv;
+        });
+        renderApp();
+    });
+    realtimeListeners.push({ ref: lvRef, handler: lvHandler });
+}
+
+function stopRealtimeSync() {
+    realtimeListeners.forEach(({ ref, handler }) => ref.off('value', handler));
+    realtimeListeners = [];
+}
+
+// ── Auth ──────────────────────────────────────────────────────────
+
+window.handleLogin = async function() {
+    const email = document.getElementById('login-u').value.trim().toLowerCase();
+    const pass  = document.getElementById('login-p').value.trim();
+    if(!email||!pass) { loginErr="Please enter email and password."; renderApp(); return; }
+
+    showLoad("Signing in...");
+    try {
+        await auth.signInWithEmailAndPassword(email, pass);
+        const profile = USER_ROLES[email];
+        if(!profile) { await auth.signOut(); hideLoad(); loginErr="Access denied for this account."; renderApp(); return; }
+
+        currentUser = profile;
+        loggedIn = true;
+        loginErr = "";
+        view = "dashboard";
+
+        showLoad("Loading data...");
+        await dbLoadAll();
+        hideLoad();
+        renderApp();
+        startRealtimeSync();
+
+        // Update online presence
+        db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+        db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
+
+    } catch(e) {
+        hideLoad();
+        if(e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+            loginErr = "Wrong email or password.";
+        } else if(e.code === 'auth/invalid-api-key' || e.code === 'auth/configuration-not-found') {
+            loginErr = "Firebase not configured yet. Paste your firebaseConfig above.";
+        } else if(e.message && e.message.includes('fetch')) {
+            loginErr = "Cannot connect. Check your Firebase config in the code.";
+        } else {
+            loginErr = "Error: " + e.message;
+        }
+        renderApp();
+    }
+};
+
+window.handleLogout = async function() {
+    stopRealtimeSync();
+    if(currentUser) db.ref(`ees_presence/${currentUser.rc}`).set(0);
+    await auth.signOut();
+    loggedIn = false; currentUser = null; orders = []; workerLeaves = {};
+    renderApp();
+};
+
+// ── UI Handlers ───────────────────────────────────────────────────
+
+window.toggleTheme = () => { isLightMode=!isLightMode; document.documentElement[isLightMode?'setAttribute':'removeAttribute']('data-theme','light'); renderApp(); };
+window.toggleSidebar = () => { isSidebarOpen=!isSidebarOpen; renderApp(); };
+window.setView = v => { view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; renderApp(); };
+window.setFilter = f => { filterAsset=f; renderApp(); };
+window.selectOrder = id => { selectedWO=id; renderApp(); };
+window.selectWorker = rc => { selectedWorker=rc; renderApp(); };
+window.closeWorkerModal = () => { selectedWorker=null; renderApp(); };
+window.openLeaveModal = rc => { leaveModalWorker=rc; renderApp(); };
+window.closeLeaveModal = () => { leaveModalWorker=null; renderApp(); };
+
+window.togglePassword = function() {
+    const p=document.getElementById('login-p'), e=document.getElementById('eye-icon');
+    e.style.transform='scale(.7)';
+    setTimeout(()=>{
+        if(p.type==='password'){p.type='text';e.style.stroke='var(--blue)';e.innerHTML=`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>`;}
+        else{p.type='password';e.style.stroke='var(--muted)';e.innerHTML=`<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>`;}
+        e.style.transform='scale(1)';
+    },150);
+};
+
+window.saveLeaveUpdates = async function(rc) {
+    const type = document.getElementById('l-type').value;
+    const from = document.getElementById('l-from')?.value||'';
+    const to   = document.getElementById('l-to')?.value||'';
+    if(type==='None') delete workerLeaves[rc];
+    else workerLeaves[rc] = {type,from,to};
+    closeLeaveModal(); renderApp();
+    try { await dbSaveLeave(rc, type==='None'?null:{type,from,to}); showToast("✅ Leave status saved"); }
+    catch(e) { showToast("❌ Failed to save leave", true); }
+};
+
+window.openWOFromWorker = function(id) {
+    selectedWorker=null;
+    const wo=orders.find(o=>o.id===id);
+    view=(wo&&wo.overallProgress===100)?"completed":"orders";
+    selectedWO=id; renderApp();
+};
+
+window.clearDatabase = async function() {
+    if(!confirm("🚨 WARNING: This permanently deletes ALL data from Firebase.\n\nThis cannot be undone. Are you sure?")) return;
+    showLoad("Clearing database...");
+    try {
+        await db.ref('ees_wo').remove();
+        await db.ref('ees_leaves').remove();
+        await db.ref('ees_meta').remove();
+        orders=[]; workerLeaves={}; lastUpdate="Never";
+        showToast("🗑️ Database cleared");
+    } catch(e) { showToast("❌ Error clearing database", true); }
+    hideLoad(); renderApp();
+};
+
+// ── WO Modal sync ─────────────────────────────────────────────────
+
+function syncModal() {
+    if(!selectedWO) return;
+    const wo = orders.find(o=>o.id===selectedWO); if(!wo) return;
+    wo.priority = document.getElementById('wo-priority').value;
+    wo.tasks.forEach((t,i) => {
+        t.status       = document.getElementById(`t-stat-${i}`)?.value||t.status;
+        t.progress     = parseInt(document.getElementById(`t-prog-${i}`)?.value)||0;
+        t.startDate    = document.getElementById(`t-start-${i}`)?.value||'';
+        t.completeDate = document.getElementById(`t-end-${i}`)?.value||'';
+        t.remarks      = document.getElementById(`t-rem-${i}`)?.value||'';
+    });
+}
+
+window.addAssignee = function(rc) { if(!rc)return; syncModal(); const wo=orders.find(o=>o.id===selectedWO); if(!wo.assignees.includes(rc))wo.assignees.push(rc); renderApp(); };
+window.removeAssignee = function(rc) { syncModal(); const wo=orders.find(o=>o.id===selectedWO); wo.assignees=wo.assignees.filter(x=>x!==rc); renderApp(); };
+
+window.saveWOUpdates = async function(woId) {
+    syncModal();
+    const wo = orders.find(o=>o.id===woId);
+    let tp=0;
+    wo.tasks.forEach(t => { t.progress=Math.min(100,Math.max(0,t.progress)); tp+=t.progress; });
+    wo.overallProgress = wo.tasks.length>0 ? Math.round(tp/wo.tasks.length) : 0;
+    renderApp(); // instant UI
+    try { await dbSaveWO(wo); showToast(`✅ Saved ${wo.id}`); }
+    catch(e) { console.error(e); showToast("❌ Save failed — check connection", true); }
+};
+
+// ── NEW Professional PDF Export ───────────────────────────────────
+
+window.exportDashboardPDF = function() {
+    if (typeof html2pdf === 'undefined') { showToast("PDF compiler loading... try again."); return; }
+    showToast("⏳ Generating EES Manpower Report...");
+
+    const stats = {};
+    let totalHead = 0, totalPresent = 0, totalLeave = 0;
+
+    WORKERS.forEach(w => {
+        if (!stats[w.designation]) {
+            stats[w.designation] = { headCount: 0, present: 0, onLeave: 0 };
+        }
+        stats[w.designation].headCount++;
+        totalHead++;
+
+        const lv = workerLeaves[w.rc];
+        if (lv && lv.type && lv.type !== 'None') {
+            stats[w.designation].onLeave++;
+            totalLeave++;
+        } else {
+            stats[w.designation].present++;
+            totalPresent++;
+        }
+    });
+
+    let tableRows = '';
+    for (const [desig, data] of Object.entries(stats)) {
+        tableRows += `
+            <tr>
+                <td style="border: 1px solid #000; padding: 10px; font-weight: 500;">${desig}</td>
+                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.headCount}</td>
+                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.present}</td>
+                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.onLeave}</td>
+            </tr>
+        `;
+    }
+
+    const reportDiv = document.createElement('div');
+    reportDiv.style.width = '800px'; 
+    reportDiv.style.padding = '40px';
+    reportDiv.style.backgroundColor = '#ffffff';
+    reportDiv.style.color = '#000000';
+    reportDiv.style.fontFamily = "'DM Sans', sans-serif";
+    
+    const d = new Date();
+    const day = d.getDate();
+    const suffix = ["th", "st", "nd", "rd"][(day % 10 > 3 || Math.floor(day % 100 / 10) === 1) ? 0 : day % 10];
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const dateStr = `${day}${suffix} ${months[d.getMonth()]} ${d.getFullYear()}`;
+
+    reportDiv.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+            <img src="1000156318.png" style="height: 60px; object-fit: contain;" alt="MTCC Logo" onerror="this.style.display='none'">
+            <div style="text-align: center; flex: 1; padding-top: 15px;">
+                <h2 style="margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; text-decoration: underline;">EES MANPOWER REPORT</h2>
+            </div>
+            <div style="text-align: right; font-size: 14px; font-weight: 600; padding-top: 20px;">
+                ${dateStr}
+            </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 60px; font-size: 14px;">
+            <thead>
+                <tr style="background-color: #f8fafc;">
+                    <th style="border: 1px solid #000; padding: 12px; text-align: left; font-weight: 700;">Designation</th>
+                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">Head Count</th>
+                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">Present</th>
+                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">On-Leave</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+                <tr style="font-weight: 700; background-color: #f1f5f9;">
+                    <td style="border: 1px solid #000; padding: 12px; text-align: right;">Total</td>
+                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalHead}</td>
+                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalPresent}</td>
+                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalLeave}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div style="display: flex; justify-content: space-between; margin-top: 80px;">
+            <div style="text-align: left; width: 250px;">
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 40px;">Prepared by:</div>
+                <div style="border-bottom: 1px solid #000; height: 10px; margin-bottom: 5px;"></div>
+                <div style="font-weight: 700; font-size: 14px;">${currentUser.name}</div>
+                <div style="font-size: 12px; color: #475569;">${currentUser.designation}</div>
+            </div>
+            <div style="text-align: left; width: 250px;">
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 40px;">Approved by:</div>
+                <div style="border-bottom: 1px solid #000; height: 10px; margin-bottom: 5px;"></div>
+                <div style="font-weight: 700; font-size: 14px;"><br/></div>
+                <div style="font-size: 12px; color: #475569;"><br/></div>
+            </div>
+        </div>
+    `;
+
+    reportDiv.style.position = 'absolute';
+    reportDiv.style.left = '-9999px';
+    document.body.appendChild(reportDiv);
+
+    const opt = {
+        margin:       0.5,
+        filename:     `EES_Manpower_Report_${new Date().toISOString().slice(0,10)}.pdf`,
+        image:        { type: 'jpeg', quality: 1 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(reportDiv).save().then(() => {
+        document.body.removeChild(reportDiv);
+        showToast("✅ Report Downloaded!");
+    });
+};
+
+// ── Excel Export ──────────────────────────────────────────────────
+
+window.exportExcel = function() {
+    if(!orders.length){showToast("No data to export.");return;}
+    let rows=[];
+    orders.forEach(wo=>{
+        const names = wo.assignees.map(rc=>WORKERS.find(w=>w.rc===rc)?.name||rc).join(", ")||"None";
+        if(!wo.tasks.length) rows.push({"WO NUMBER":wo.id,"ASSET":wo.asset,"DATE":formatDateNice(wo.date),"PRIORITY":wo.priority,"ASSIGNEES":names,"TASK NO":"","DETAILS":"","STATUS":"","START":"","PROGRESS %":"","COMPLETED":"","REMARKS":""});
+        else wo.tasks.forEach(t=>rows.push({"WO NUMBER":wo.id,"ASSET":wo.asset,"DATE":formatDateNice(wo.date),"PRIORITY":wo.priority,"ASSIGNEES":names,"TASK NO":t.taskNo,"DETAILS":t.details,"STATUS":t.status,"START":formatDateNice(t.startDate),"PROGRESS %":t.progress,"COMPLETED":formatDateNice(t.completeDate),"REMARKS":t.remarks}));
+    });
+    let url="",fn=`EEW_WO_${new Date().toISOString().slice(0,10)}`,isX=false;
+    try{if(window.XLSX){const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"EEW");const o=XLSX.write(wb,{bookType:'xlsx',type:'array'});url=URL.createObjectURL(new Blob([o],{type:'application/octet-stream'}));fn+=".xlsx";isX=true;}}catch(e){}
+    if(!isX){const h=Object.keys(rows[0]).join(","),r=rows.map(o=>Object.values(o).map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");url=URL.createObjectURL(new Blob([h+"\n"+r],{type:'text/csv'}));fn+=".csv";}
+    document.body.insertAdjacentHTML('beforeend',`<div class="overlay" id="dlm" onclick="if(event.target===this)this.remove()"><div class="modal" style="max-width:380px;background:var(--surface);"><div class="modal-head"><div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;">Export Ready 📊</div><button onclick="document.getElementById('dlm').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;">✕</button></div><div class="modal-body" style="text-align:center;padding:30px;"><div style="color:var(--muted);font-size:13px;margin-bottom:20px;">Your data is compiled and ready to download.</div><a href="${url}" download="${fn}" class="btn btn-primary" style="text-decoration:none;padding:14px;width:100%;justify-content:center;font-size:14px;" onclick="setTimeout(()=>document.getElementById('dlm').remove(),500)">⬇️ Download ${isX?'Excel':'CSV'}</a><button class="btn btn-ghost" style="margin-top:10px;width:100%;justify-content:center;" onclick="document.getElementById('dlm').remove()">Cancel</button></div></div></div>`);
+};
+
+// ── Excel Import ──────────────────────────────────────────────────
+
+window.processExcel = async function(file) {
+    if(!window.XLSX){showToast("⏳ Library loading...");return;}
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+        showLoad("Reading Excel file...");
+        try {
+            const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+            const ws=wb.Sheets[wb.SheetNames[0]];
+            let rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+            if(rows.length>0&&!("WO NUMBER" in rows[0])&&!("WO ID" in rows[0]))
+                rows=XLSX.utils.sheet_to_json(ws,{range:4,defval:""});
+            if(!rows.length){hideLoad();showToast("⚠️ No data found.");return;}
+
+            const hd=Object.keys(rows[0]||{});
+            const sk  = hd.find(k=>k.trim().toUpperCase().includes('START DATE'))    || "START DATE";
+            const pk  = hd.find(k=>k.trim().toUpperCase().includes('PROGRESS'))      || " PROGRESS\n%";
+            const stk = hd.find(k=>k.trim().toUpperCase()==='STATUS')                || "STATUS";
+            const ck  = hd.find(k=>k.trim().toUpperCase()==='COMPLETED DATE')        || "COMPLETED DATE";
+            const rk  = hd.find(k=>k.trim().toUpperCase().includes('REMARKS'))       || "WORKSHOPS REMARKS";
+            const dk  = hd.find(k=>k.trim().toUpperCase().includes('CAPTAL')||k.trim().toUpperCase()==='TASK DETAILS') || "TASK DETAILS";
+
+            const eew = rows.filter(r=>String(r["UNIT"]||"").trim().toUpperCase()==="EEW"||String(r["WO NUMBER"]||"").trim().toUpperCase().includes("-EEW"));
+            if(!eew.length){hideLoad();showToast("⚠️ No EEW records found.");return;}
+
+            let added=0, updated=0;
+            const changed=new Map();
+
+            eew.forEach(r=>{
+                const wid=String(r["WO NUMBER"]||r["WO ID"]).trim();
+                if(!wid||wid==="0")return;
+                const ed=formatForInput(r["TASK DATE"])||formatForInput(r[sk])||"";
+                let wo=orders.find(o=>o.id===wid);
+                if(!wo){wo={id:wid,sr:String(r["SR NUMBER"]||"").trim(),svo:String(r["SVO NUMBER"]||"").trim(),asset:String(r["ASSET/SERVICE NAME"]||"TBA").trim(),date:ed,priority:"Minor",overallProgress:0,assignees:[],tasks:[]};orders.push(wo);}
+                else if(isBadDate(wo.date)&&ed)wo.date=ed;
+
+                const tn=String(r["TASK NO:"]||`Task-${wo.tasks.length+1}`).trim();
+                const es=formatForInput(r[sk]),ee=formatForInput(r[ck]);
+                const edet=String(r[dk]||r["TASK DETAILS"]||"").trim();
+                const er=String(r[rk]||"").trim();
+
+                let pv=r[pk],pn=0;
+                if(typeof pv==='number')pn=pv;else if(typeof pv==='string')pn=parseFloat(pv.replace("%",""))||0;
+                if(pn>0&&pn<=1)pn*=100;
+                pn=Math.round(Math.min(100,Math.max(0,pn)));
+
+                let rawSt=String(r[stk]||"Pending").trim().toLowerCase(), st="Pending";
+                if(rawSt.includes("hold")||rawSt.includes("material")||rawSt.includes("delay"))st="Onhold";
+                else if(rawSt.includes("ongo")||rawSt.includes("on-go")||rawSt.includes("progress"))st="Ongoing";
+                else if(rawSt.includes("comp"))st="Completed";
+                else if(rawSt.includes("canc"))st="Cancelled";
+
+                const tx=wo.tasks.find(t=>t.taskNo===tn);
+                if(!tx){wo.tasks.push({taskNo:tn,details:edet,status:st,startDate:es,progress:pn,completeDate:ee,remarks:er});added++;changed.set(wo.id,wo);}
+                else{let c=false;if(es&&(isBadDate(tx.startDate)||tx.startDate!==es)){tx.startDate=es;c=true;}if(ee&&(isBadDate(tx.completeDate)||tx.completeDate!==ee)){tx.completeDate=ee;c=true;}if(edet&&tx.details!==edet){tx.details=edet;c=true;}if(r[stk]&&tx.status!==st){tx.status=st;c=true;}if(r[pk]!==undefined&&r[pk]!==""&&tx.progress!==pn){tx.progress=pn;c=true;}if(er&&tx.remarks!==er){tx.remarks=er;c=true;}if(c){updated++;changed.set(wo.id,wo);}}
+            });
+
+            changed.forEach(wo=>{if(wo.tasks.length){let tp=0;wo.tasks.forEach(t=>tp+=t.progress);wo.overallProgress=Math.round(tp/wo.tasks.length);}});
+
+            if(changed.size>0){
+                showLoad(`Saving ${changed.size} work orders to Firebase...`);
+                await dbBatchSave([...changed.values()]);
+                lastUpdate=new Date().toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"});
+                await dbSaveLastUpdate(lastUpdate);
+                showToast(`✅ Added ${added} new tasks, updated ${updated} existing`);
+                setView('orders');
+            } else {
+                showToast("⚠️ No changes — database already up to date.");
+            }
+        } catch(err) {
+            console.error(err);
+            showToast("❌ Error: "+err.message, true);
+        }
+        hideLoad(); renderApp();
+    };
+    reader.readAsArrayBuffer(file);
+};
+
+window.handleFileSelect = e => { if(e.target.files[0]) processExcel(e.target.files[0]); };
+window.handleDrop = e => { e.preventDefault(); e.currentTarget.classList.remove('drag'); if(e.dataTransfer.files[0]) processExcel(e.dataTransfer.files[0]); };
+
+// ── Render helpers ────────────────────────────────────────────────
+
+function PTagHTML(p) { const c=PRI_CFG[p]||PRI_CFG["Minor"]; return `<span class="ptag" style="color:${c.color};border:1px solid ${c.color}60;">${p}</span>`; }
+
+function getSidebarHTML() {
+    const iv = currentUser?.role==='viewer';
+    let onlineHtml = "";
+    if(currentUser?.role==='admin') {
+        db.ref('ees_presence/5794').once('value').then(snap => {
+            const t=snap.val()||0;
+            const online=(Date.now()-t)<300000;
+            const el=document.getElementById('viewer-status');
+            if(el) el.innerHTML=online?'<span style="color:var(--green);font-weight:700;">🟢 Online</span>':'<span style="color:var(--red);font-weight:600;">🔴 Offline</span>';
+        });
+        onlineHtml=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);"><span style="color:var(--text);font-weight:600;">Ahmed Miushaan</span><span id="viewer-status"><span style="color:var(--red);font-weight:600;">🔴 Offline</span></span></div>`;
+    }
+    return `
+    <aside class="sidebar ${isSidebarOpen?'show':''}">
+        <div class="logo">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1px;line-height:1.2;margin-top:10px;margin-bottom:5px;">EES WO CONTROL<br>DATABASE</div>
+        </div>
+        <div class="nav-grp"><div class="nav-grp-lbl">Main</div>
+            <div class="nav-item ${view==='dashboard'?'active':''}" onclick="setView('dashboard')"><span>📊</span> Dashboard</div>
+            <div class="nav-item ${view==='orders'?'active':''}" onclick="setView('orders')"><span>📋</span> Active Orders</div>
+            <div class="nav-item ${view==='completed'?'active':''}" onclick="setView('completed')"><span>✅</span> WO Completed</div>
+        </div>
+        <div class="nav-grp"><div class="nav-grp-lbl">Team</div>
+            <div class="nav-item ${view==='workers'?'active':''}" onclick="setView('workers')"><span>👷</span> EES Team</div>
+        </div>
+        <div class="nav-grp"><div class="nav-grp-lbl">Reports & Data</div>
+            ${!iv?`<div class="nav-item ${view==='upload'?'active':''}" onclick="setView('upload')"><span>⬆️</span> Manage Data</div>`:''}
+            <div class="nav-item" onclick="exportExcel()"><span>⬇️</span> Export Excel</div>
+        </div>
+        <div class="sidebar-foot">
+            ${onlineHtml}
+            <div class="user-card">
+                <div class="avc">${ini(currentUser.name)}</div>
+                <div><div class="user-name">${currentUser.name}</div><div class="user-role">${currentUser.designation}</div></div>
+            </div>
+            <div class="theme-row">
+                <span style="font-size:12px;color:var(--muted);font-weight:600;">Light Mode</span>
+                <label class="switch"><input type="checkbox" onchange="toggleTheme()" ${isLightMode?'checked':''}><span class="slider"></span></label>
+            </div>
+            <div class="logout-text" onclick="handleLogout()">Logout</div>
+        </div>
+    </aside>`;
+}
+
+// ── Main render ───────────────────────────────────────────────────
+
+function renderApp() {
+    const root = document.getElementById("app-root");
+
+    if(!loggedIn) {
+        root.innerHTML=`<div class="login-wrap"><div class="login-card">
+            <div class="login-title">EES WO CONTROL DATABASE</div>
+            <div class="login-subtitle">MTCC</div>
+            <div class="login-inp-group">
+                <label class="login-lbl">Email / Username</label>
+                <input id="login-u" class="login-inp" type="text" placeholder="Enter username or email" onkeydown="if(event.key==='Enter')handleLogin()">
+                <label class="login-lbl">Password</label>
+                <div class="pwd-container">
+                    <input id="login-p" class="login-inp" type="password" placeholder="Enter password" style="padding-right:40px" onkeydown="if(event.key==='Enter')handleLogin()">
+                    <div class="pwd-toggle" onclick="togglePassword()">
+                        <svg id="eye-icon" viewBox="0 0 24 24" width="18" height="18" stroke="var(--muted)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                            <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                    </div>
+                </div>
+                ${loginErr?`<div class="login-err">⚠ ${loginErr}</div>`:''}
+            </div>
+            <button class="login-btn" onclick="handleLogin()">Sign In →</button>
+        </div></div>`;
+        return;
+    }
+
+    // Update presence ping
+    if(currentUser) db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+
+    const isViewer = currentUser?.role==='viewer';
+    const dis = isViewer?'disabled':'';
+    let contentHtml="", detailHtml="", topbarExtra="";
+
+    // ── Dashboard ──
+    if(view==="dashboard") {
+        let onLeave=0; WORKERS.forEach(w=>{if(workerLeaves[w.rc]?.type&&workerLeaves[w.rc].type!=='None')onLeave++;});
+        const uc=orders.filter(o=>(o.priority==="Urgent"||o.priority==="Critical")&&o.overallProgress<100);
+        const og=orders.filter(o=>o.tasks.some(t=>t.status==="Ongoing")&&o.overallProgress<100);
+        let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
+        orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
+        topbarExtra=`<button class="btn" style="background:var(--red);color:#fff;font-weight:700;" onclick="exportDashboardPDF()">📄 REPORT</button>`;
+        contentHtml=`
+        <div id="dashboard-content" style="display:flex;flex-direction:column;gap:30px;padding-bottom:20px;">
+            <div><div class="sec-title">EES MANPOWER</div><div class="task-stats">
+                <div class="ts-item"><div class="ts-val">${WORKERS.length}</div><div class="ts-lbl">Headcount</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${WORKERS.length-onLeave}</div><div class="ts-lbl">On Duty</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${onLeave}</div><div class="ts-lbl">On Leave</div></div>
+            </div></div>
+            <div><div class="sec-title">Tasks Status</div><div class="task-stats">
+                <div class="ts-item"><div class="ts-val">${tT}</div><div class="ts-lbl">Total</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${tOn}</div><div class="ts-lbl">Ongoing</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${tOh}</div><div class="ts-lbl">Onhold</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--muted)">${tP}</div><div class="ts-lbl">Pending</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--green)">${tC}</div><div class="ts-lbl">Completed</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${tCn}</div><div class="ts-lbl">Cancelled</div></div>
+            </div></div>
+            <div><div class="sec-title" style="color:var(--red);">🚨 Urgent & Critical Active WOs</div><div class="wo-list">
+                ${uc.length===0?`<div style="padding:18px;color:var(--muted);background:var(--card);border-radius:8px;">No Urgent/Critical items.</div>`:''}
+                ${uc.map(o=>`<div class="wo-card" style="border-left-color:${PRI_CFG[o.priority].color}" onclick="selectOrder('${o.id}');setView('orders')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog">Prog: ${o.overallProgress}%</div></div></div>`).join('')}
+            </div></div>
+            <div><div class="sec-title" style="color:var(--green);">🟢 Ongoing Active WOs</div><div class="wo-list">
                 ${og.length===0?`<div style="padding:18px;color:var(--muted);background:var(--card);border-radius:8px;">No Ongoing items.</div>`:''}
                 ${og.map(o=>`<div class="wo-card ongoing-glow" onclick="selectOrder('${o.id}');setView('orders')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog">Prog: ${o.overallProgress}%</div></div></div>`).join('')}
             </div></div>
