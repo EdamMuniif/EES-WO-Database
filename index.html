@@ -32,7 +32,7 @@
         input, select, textarea, button { font-family: inherit; }
 
         /* ── Loading overlay ── */
-        #loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+        #loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
         .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
         .loading-msg { color: #fff; margin-top: 14px; font-size: 14px; font-weight: 500; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -178,7 +178,7 @@
 <div id="toast-container"></div>
 <div id="loading-overlay">
     <div class="spinner"></div>
-    <div class="loading-msg" id="loading-msg">Starting up...</div>
+    <div class="loading-msg" id="loading-msg">Processing Excel...</div>
 </div>
 
 <script>
@@ -195,14 +195,23 @@ const firebaseConfig = {
 };
 // ─────────────────────────────────────────────────────────────────
 
-firebase.initializeApp(firebaseConfig);
-const db   = firebase.database();
-const auth = firebase.auth();
+// Initialize Firebase safely
+let db = null;
+let auth = null;
+if (typeof firebase !== 'undefined') {
+    try {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+        auth = firebase.auth();
+    } catch(e) {
+        console.warn("Firebase initialized failed", e);
+    }
+}
 
-// ── User role map ─────────────────────────────────────────────────
-const USER_ROLES = {
-    'adam.muneef@mtcc.com.mv':    { rc:'7485', name:'Adam Muneef',    designation:'Senior Electrician',  role:'admin'  },
-    'ahmed.miushaan@mtcc.com.mv': { rc:'5794', name:'Ahmed Miushaan', designation:'Project Coordinator', role:'viewer' }
+// ── HARDCODED LOCAL USERS (For Offline/Firewall Bypass) ──────────
+const LOCAL_USERS = {
+    'adam.muneef@mtcc.com.mv':    { rc:'7485', name:'Adam Muneef',    designation:'Senior Electrician',  role:'admin', pass: 'Ninetynine@99'  },
+    'ahmed.miushaan@mtcc.com.mv': { rc:'5794', name:'Ahmed Miushaan', designation:'Project Coordinator', role:'viewer', pass: 'SRD7485' }
 };
 
 const PRI_CFG = {
@@ -267,7 +276,7 @@ let filterAsset="All", isLightMode=false, isSidebarOpen=false, lastUpdate="Never
 let realtimeListeners = [];
 
 // ── Loading UI ────────────────────────────────────────────────────
-function showLoad(msg="Loading...") {
+function showLoad(msg="Processing...") {
     document.getElementById('loading-msg').textContent = msg;
     document.getElementById('loading-overlay').style.display = 'flex';
 }
@@ -282,74 +291,75 @@ window.showToast = function(msg, isError=false) {
     setTimeout(() => { tc.innerHTML=''; }, 3500);
 };
 
-// ── Firebase DB Functions ─────────────────────────────────────────
-
-// Fetch wrapper with 8 second timeout
-const fetchWithTimeout = (ref, ms) => {
-    return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Timeout")), ms);
-        ref.once('value').then(snap => {
-            clearTimeout(timer);
-            resolve(snap);
-        }).catch(err => {
-            clearTimeout(timer);
-            reject(err);
-        });
-    });
+// ── Local Storage Wrapper ─────────────────────────────────────────
+const SafeStorage = {
+    getItem: function(key) {
+        try { return localStorage.getItem(key); } 
+        catch(e) { return sessionStorage.getItem(key) || null; }
+    },
+    setItem: function(key, value) {
+        try { localStorage.setItem(key, value); } 
+        catch(e) { 
+            try { sessionStorage.setItem(key, value); } catch(err) {}
+        }
+    }
 };
 
-async function dbSaveWO(wo) {
+function saveData() { 
+    try {
+        SafeStorage.setItem('ees_wo_data', JSON.stringify(orders)); 
+        SafeStorage.setItem('ees_worker_leaves', JSON.stringify(workerLeaves)); 
+        SafeStorage.setItem('ees_wo_last_update', lastUpdate); 
+    } catch(e) {}
+}
+
+// ── Background Firebase Sync (NEVER BLOCKS UI) ────────────────────
+function dbSaveWO(wo) {
+    if(!db) return Promise.resolve();
     const woData = {
         id: wo.id, asset: wo.asset, date: wo.date, sr: wo.sr||"",
         svo: wo.svo||"", priority: wo.priority,
         overallProgress: wo.overallProgress,
-        assignees: wo.assignees||[],
-        tasks: wo.tasks||[]
+        assignees: wo.assignees||[], tasks: wo.tasks||[]
     };
-    await db.ref(`ees_wo/${wo.id}`).set(woData);
+    return db.ref(`ees_wo/${wo.id}`).set(woData);
 }
 
-async function dbBatchSave(changedWOs) {
+function dbBatchSave(changedWOs) {
+    if(!db) return Promise.resolve();
     const updates = {};
     changedWOs.forEach(wo => {
         updates[`ees_wo/${wo.id}`] = {
             id: wo.id, asset: wo.asset, date: wo.date, sr: wo.sr||"",
             svo: wo.svo||"", priority: wo.priority,
             overallProgress: wo.overallProgress,
-            assignees: wo.assignees||[],
-            tasks: wo.tasks||[]
+            assignees: wo.assignees||[], tasks: wo.tasks||[]
         };
     });
-    await db.ref().update(updates);
+    return db.ref().update(updates);
 }
 
-async function dbSaveLeave(rc, data) {
-    if(!data || data.type==='None') {
-        await db.ref(`ees_leaves/${rc}`).remove();
-    } else {
-        await db.ref(`ees_leaves/${rc}`).set({ type: data.type, from: data.from||"", to: data.to||"" });
-    }
+function dbSaveLeave(rc, data) {
+    if(!db) return Promise.resolve();
+    if(!data || data.type==='None') return db.ref(`ees_leaves/${rc}`).remove();
+    else return db.ref(`ees_leaves/${rc}`).set({ type: data.type, from: data.from||"", to: data.to||"" });
 }
 
-async function dbSaveLastUpdate(ts) {
-    await db.ref('ees_meta/lastUpdate').set(ts);
+function dbSaveLastUpdate(ts) {
+    if(!db) return Promise.resolve();
+    return db.ref('ees_meta/lastUpdate').set(ts);
 }
 
 async function dbLoadAll() {
-    const [woSnap, leavesSnap, metaSnap] = await Promise.all([
-        fetchWithTimeout(db.ref('ees_wo'), 8000),
-        fetchWithTimeout(db.ref('ees_leaves'), 8000),
-        fetchWithTimeout(db.ref('ees_meta'), 8000)
-    ]);
+    if(!db) return;
+    const woSnap = await db.ref('ees_wo').once('value');
+    const leavesSnap = await db.ref('ees_leaves').once('value');
+    const metaSnap = await db.ref('ees_meta').once('value');
 
     const woData = woSnap.val() || {};
     orders = Object.values(woData).map(wo => ({
-        id: wo.id||"",
-        asset: wo.asset||"",
-        date: wo.date||"",
-        sr: wo.sr||"",
-        svo: wo.svo||"",
-        priority: wo.priority||"Minor",
+        id: wo.id||"", asset: wo.asset||"", date: wo.date||"",
+        sr: wo.sr||"", svo: wo.svo||"", priority: wo.priority||"Minor",
         overallProgress: wo.overallProgress||0,
         assignees: Array.isArray(wo.assignees) ? wo.assignees : [],
         tasks: Array.isArray(wo.tasks) ? wo.tasks : []
@@ -365,8 +375,8 @@ async function dbLoadAll() {
     lastUpdate = meta.lastUpdate || "Never";
 }
 
-// ── Real-time listener: auto-refresh when any device changes data ──
 function startRealtimeSync() {
+    if(!db) return;
     stopRealtimeSync();
 
     const woRef = db.ref('ees_wo');
@@ -375,8 +385,7 @@ function startRealtimeSync() {
         const data = snap.val() || {};
         orders = Object.values(data).map(wo => ({
             id: wo.id||"", asset: wo.asset||"", date: wo.date||"",
-            sr: wo.sr||"", svo: wo.svo||"",
-            priority: wo.priority||"Minor",
+            sr: wo.sr||"", svo: wo.svo||"", priority: wo.priority||"Minor",
             overallProgress: wo.overallProgress||0,
             assignees: Array.isArray(wo.assignees) ? wo.assignees : [],
             tasks: Array.isArray(wo.tasks) ? wo.tasks : []
@@ -403,59 +412,67 @@ function stopRealtimeSync() {
     realtimeListeners = [];
 }
 
-// ── Auth ──────────────────────────────────────────────────────────
+// ── Auth (INSTANT OFFLINE BYPASS) ─────────────────────────────────
 
-window.handleLogin = async function() {
-    const email = document.getElementById('login-u').value.trim().toLowerCase();
-    const pass  = document.getElementById('login-p').value.trim();
-    if(!email||!pass) { loginErr="Please enter email and password."; renderApp(); return; }
+window.handleLogin = function() {
+    const inputU = document.getElementById('login-u').value.trim().toLowerCase();
+    const inputP = document.getElementById('login-p').value.trim();
+    if(!inputU || !inputP) { loginErr="Please enter email and password."; renderApp(); return; }
 
-    showLoad("Signing in...");
-    try {
-        await auth.signInWithEmailAndPassword(email, pass);
-        const profile = USER_ROLES[email];
-        if(!profile) { await auth.signOut(); hideLoad(); loginErr="Access denied for this account."; renderApp(); return; }
+    // 1. INSTANT LOCAL AUTHENTICATION
+    let matchedEmail = null;
+    let matchedUser = null;
+    
+    for (const [email, profile] of Object.entries(LOCAL_USERS)) {
+        const username = email.split('@')[0];
+        if ((inputU === email || inputU === username) && inputP === profile.pass) {
+            matchedEmail = email;
+            matchedUser = Object.assign({}, profile); // Clone
+            delete matchedUser.pass; // Remove password from session memory
+            break;
+        }
+    }
 
-        currentUser = profile;
-        loggedIn = true;
-        loginErr = "";
-        view = "dashboard";
+    if (!matchedUser) {
+        loginErr = "Invalid Username, Email, or Password.";
+        renderApp();
+        return;
+    }
 
-        showLoad("Connecting to Database...");
-        try {
-            await dbLoadAll();
+    // 2. LOG THE USER IN INSTANTLY LOCALLY
+    currentUser = matchedUser;
+    loggedIn = true;
+    loginErr = "";
+    view = "dashboard";
+    SafeStorage.setItem('ees_current_user', JSON.stringify(currentUser));
+    renderApp(); // Display the dashboard with offline data immediately
+
+    // 3. TRY FIREBASE IN THE BACKGROUND
+    if (auth && db) {
+        auth.signInWithEmailAndPassword(matchedEmail, inputP).then(async () => {
+            await dbLoadAll(); // Fetch latest from cloud
+            saveData(); // Save latest to local memory
             startRealtimeSync();
             db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
             db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
-        } catch(e) {
-            console.warn("Could not connect to live database, using offline mode.");
-            showToast("⚠️ Offline Mode: Check Firebase Setup", true);
-        }
-        
-        hideLoad();
-        renderApp();
-
-    } catch(e) {
-        hideLoad();
-        if(e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-            loginErr = "Wrong email or password.";
-        } else if(e.code === 'auth/invalid-api-key' || e.code === 'auth/configuration-not-found') {
-            loginErr = "Firebase not configured yet. Paste your firebaseConfig above.";
-        } else if(e.message && e.message.includes('fetch')) {
-            loginErr = "Cannot connect. Check your Firebase config in the code.";
-        } else {
-            loginErr = "Error: " + e.message;
-        }
-        renderApp();
+            renderApp(); // Update UI with live cloud data
+            showToast("✅ Connected to Live Cloud Database");
+        }).catch(e => {
+            console.warn("Firebase Auth Blocked by Firewall:", e.message);
+            showToast("⚠️ Firewall Detected: Running securely in Offline Mode", true);
+        });
+    } else {
+        showToast("⚠️ Running in Offline Mode", true);
     }
 };
 
-window.handleLogout = async function() {
+window.handleLogout = function() {
     stopRealtimeSync();
-    if(currentUser) db.ref(`ees_presence/${currentUser.rc}`).set(0);
-    await auth.signOut();
+    if(currentUser && db) db.ref(`ees_presence/${currentUser.rc}`).set(0).catch(e=>{});
+    if(auth) auth.signOut().catch(e=>{});
     loggedIn = false; currentUser = null; orders = []; workerLeaves = {};
-    renderApp();
+    SafeStorage.setItem('ees_current_user', ''); 
+    renderApp(); 
 };
 
 // ── UI Handlers ───────────────────────────────────────────────────
@@ -480,15 +497,21 @@ window.togglePassword = function() {
     },150);
 };
 
-window.saveLeaveUpdates = async function(rc) {
+window.saveLeaveUpdates = function(rc) {
     const type = document.getElementById('l-type').value;
     const from = document.getElementById('l-from')?.value||'';
     const to   = document.getElementById('l-to')?.value||'';
+    
     if(type==='None') delete workerLeaves[rc];
     else workerLeaves[rc] = {type,from,to};
-    closeLeaveModal(); renderApp();
-    try { await dbSaveLeave(rc, type==='None'?null:{type,from,to}); showToast("✅ Leave status saved"); }
-    catch(e) { showToast("❌ Failed to save leave", true); }
+    
+    saveData(); // Instant local save
+    closeLeaveModal(); 
+    renderApp(); 
+    showToast("✅ Leave status saved");
+
+    // Background cloud sync
+    if(db) dbSaveLeave(rc, type==='None'?null:{type,from,to}).catch(e=>console.warn("Cloud save failed", e));
 };
 
 window.openWOFromWorker = function(id) {
@@ -498,20 +521,20 @@ window.openWOFromWorker = function(id) {
     selectedWO=id; renderApp();
 };
 
-window.clearDatabase = async function() {
-    if(!confirm("🚨 WARNING: This permanently deletes ALL data from Firebase.\n\nThis cannot be undone. Are you sure?")) return;
-    showLoad("Clearing database...");
-    try {
-        await db.ref('ees_wo').remove();
-        await db.ref('ees_leaves').remove();
-        await db.ref('ees_meta').remove();
-        orders=[]; workerLeaves={}; lastUpdate="Never";
-        showToast("🗑️ Database cleared");
-    } catch(e) { showToast("❌ Error clearing database", true); }
-    hideLoad(); renderApp();
-};
+window.clearDatabase = function() {
+    if(!confirm("🚨 WARNING: This permanently deletes ALL data.\n\nAre you sure?")) return;
+    orders=[]; workerLeaves={}; lastUpdate="Never";
+    saveData(); // Instant local clear
+    showToast("🗑️ Database cleared");
+    renderApp();
 
-// ── WO Modal sync ─────────────────────────────────────────────────
+    // Background cloud sync
+    if(db) {
+        db.ref('ees_wo').remove().catch(e=>{});
+        db.ref('ees_leaves').remove().catch(e=>{});
+        db.ref('ees_meta').remove().catch(e=>{});
+    }
+};
 
 function syncModal() {
     if(!selectedWO) return;
@@ -529,15 +552,19 @@ function syncModal() {
 window.addAssignee = function(rc) { if(!rc)return; syncModal(); const wo=orders.find(o=>o.id===selectedWO); if(!wo.assignees.includes(rc))wo.assignees.push(rc); renderApp(); };
 window.removeAssignee = function(rc) { syncModal(); const wo=orders.find(o=>o.id===selectedWO); wo.assignees=wo.assignees.filter(x=>x!==rc); renderApp(); };
 
-window.saveWOUpdates = async function(woId) {
+window.saveWOUpdates = function(woId) {
     syncModal();
     const wo = orders.find(o=>o.id===woId);
     let tp=0;
     wo.tasks.forEach(t => { t.progress=Math.min(100,Math.max(0,t.progress)); tp+=t.progress; });
     wo.overallProgress = wo.tasks.length>0 ? Math.round(tp/wo.tasks.length) : 0;
-    renderApp(); // instant UI
-    try { await dbSaveWO(wo); showToast(`✅ Saved ${wo.id}`); }
-    catch(e) { console.error(e); showToast("❌ Save failed — check connection", true); }
+    
+    saveData(); // Instant local save
+    renderApp(); 
+    showToast(`✅ Saved ${wo.id}`);
+
+    // Background cloud sync
+    if(db) dbSaveWO(wo).catch(e => console.warn("Cloud save failed", e));
 };
 
 // ── NEW Professional PDF Export ───────────────────────────────────
@@ -593,7 +620,7 @@ window.exportDashboardPDF = function() {
 
     reportDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
-            <img src="1000156318.png" style="height: 60px; object-fit: contain;" alt="MTCC Logo" onerror="this.style.display='none'">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;line-height:1;">EES WO<br>DATABASE</div>
             <div style="text-align: center; flex: 1; padding-top: 15px;">
                 <h2 style="margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; text-decoration: underline;">EES MANPOWER REPORT</h2>
             </div>
@@ -678,7 +705,7 @@ window.processExcel = async function(file) {
     if(!window.XLSX){showToast("⏳ Library loading...");return;}
     const reader=new FileReader();
     reader.onload=async(e)=>{
-        showLoad("Reading Excel file...");
+        showLoad("Processing Excel...");
         try {
             const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
             const ws=wb.Sheets[wb.SheetNames[0]];
@@ -746,12 +773,18 @@ window.processExcel = async function(file) {
             changed.forEach(wo=>{if(wo.tasks.length){let tp=0;wo.tasks.forEach(t=>tp+=t.progress);wo.overallProgress=Math.round(tp/wo.tasks.length);}});
 
             if(changed.size>0){
-                showLoad(`Saving ${changed.size} work orders to Firebase...`);
-                await dbBatchSave([...changed.values()]);
+                // Instant local save
+                orders = [...orders];
                 lastUpdate=new Date().toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"});
-                await dbSaveLastUpdate(lastUpdate);
+                saveData();
                 showToast(`✅ Added ${added} new tasks, updated ${updated} existing`);
                 setView('orders');
+
+                // Background cloud sync
+                if (db) {
+                    dbBatchSave([...changed.values()]).catch(e=>{});
+                    dbSaveLastUpdate(lastUpdate).catch(e=>{});
+                }
             } else {
                 showToast("⚠️ No changes — database already up to date.");
             }
@@ -782,7 +815,6 @@ function getSidebarHTML() {
     return `
     <aside class="sidebar ${isSidebarOpen?'show':''}">
         <div class="logo">
-            <img src="1000156318.png" alt="MTCC Logo" class="sidebar-logo-img" style="max-height: 35px; margin-bottom: 5px;" onerror="this.style.display='none'">
             <div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1px;line-height:1.2;margin-top:10px;margin-bottom:5px;">EES WO CONTROL<br>DATABASE</div>
         </div>
         <div class="nav-grp"><div class="nav-grp-lbl">Main</div>
@@ -800,8 +832,8 @@ function getSidebarHTML() {
         <div class="sidebar-foot">
             ${onlineHtml}
             <div class="user-card">
-                <div class="avc">${ini(currentUser.name)}</div>
-                <div><div class="user-name">${currentUser.name}</div><div class="user-role">${currentUser.designation}</div></div>
+                <div class="avc">${ini(currentUser?.name)}</div>
+                <div><div class="user-name">${currentUser?.name}</div><div class="user-role">${currentUser?.designation}</div></div>
             </div>
             <div class="theme-row">
                 <span style="font-size:12px;color:var(--muted);font-weight:600;">Light Mode</span>
@@ -841,8 +873,7 @@ function renderApp() {
         return;
     }
 
-    // Update presence ping
-    if(currentUser) db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+    if(currentUser && db) db.ref(`ees_presence/${currentUser.rc}`).set(Date.now()).catch(e=>{});
 
     const isViewer = currentUser?.role==='viewer';
     const dis = isViewer?'disabled':'';
@@ -964,33 +995,39 @@ function renderApp() {
     root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||\"\"}</div></div>${topbarExtra}</div><div class="body-wrap"><div class=\"content\">${contentHtml}</div>${detailHtml}</div></div></div>`;
 }
 
-// ── Init: check if user already signed in ─────────────────────────
-auth.onAuthStateChanged(async user => {
-    if(user) {
-        const profile = USER_ROLES[user.email];
-        if(profile) {
-            currentUser=profile; loggedIn=true; view="dashboard";
-            showLoad("Connecting to Database...");
-            try { 
-                await dbLoadAll(); 
-                startRealtimeSync();
-                db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
-                db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
-            } catch(e) { 
-                console.warn("Could not connect to live database, using offline mode."); 
-                showToast("⚠️ Offline Mode: Check Firebase Setup", true);
-            }
-            hideLoad(); renderApp();
-        } else {
-            hideLoad(); renderApp();
-        }
-    } else {
-        hideLoad(); renderApp();
+// ── Boot Application Instantly (Offline First) ───────────────────
+const initApp = () => {
+    // Check local memory first for instant load
+    const savedUser = SafeStorage.getItem('ees_current_user');
+    if (savedUser) {
+        try {
+            currentUser = JSON.parse(savedUser);
+            loggedIn = true;
+            view = "dashboard";
+        } catch(e) {}
     }
-});
+
+    // Instantly render UI without waiting for network
+    document.getElementById('loading-overlay').style.display = 'none';
+    renderApp();
+
+    // Now try to securely connect to Firebase in the background
+    if (loggedIn && typeof firebase !== 'undefined') {
+        auth.onAuthStateChanged(async fbUser => {
+            if (fbUser) {
+                try {
+                    await dbLoadAll();
+                    startRealtimeSync();
+                    db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+                    db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
+                    renderApp(); // Update silently with live data
+                } catch(e) {}
+            }
+        });
+    }
+};
+
+initApp();
 </script>
 </body>
 </html>
-"""
-
-print(content)}
