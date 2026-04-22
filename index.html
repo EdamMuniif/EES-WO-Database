@@ -32,7 +32,7 @@
         input, select, textarea, button { font-family: inherit; }
 
         /* ── Loading overlay ── */
-        #loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+        #loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
         .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
         .loading-msg { color: #fff; margin-top: 14px; font-size: 14px; font-weight: 500; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -178,7 +178,7 @@
 <div id="toast-container"></div>
 <div id="loading-overlay">
     <div class="spinner"></div>
-    <div class="loading-msg" id="loading-msg">Processing Excel...</div>
+    <div class="loading-msg" id="loading-msg">Starting up...</div>
 </div>
 
 <script>
@@ -195,23 +195,14 @@ const firebaseConfig = {
 };
 // ─────────────────────────────────────────────────────────────────
 
-// Initialize Firebase safely
-let db = null;
-let auth = null;
-if (typeof firebase !== 'undefined') {
-    try {
-        firebase.initializeApp(firebaseConfig);
-        db = firebase.database();
-        auth = firebase.auth();
-    } catch(e) {
-        console.warn("Firebase initialized failed", e);
-    }
-}
+firebase.initializeApp(firebaseConfig);
+const db   = firebase.database();
+const auth = firebase.auth();
 
-// ── HARDCODED LOCAL USERS (For Offline/Firewall Bypass) ──────────
-const LOCAL_USERS = {
-    'adam.muneef@mtcc.com.mv':    { rc:'7485', name:'Adam Muneef',    designation:'Senior Electrician',  role:'admin', pass: 'Ninetynine@99'  },
-    'ahmed.miushaan@mtcc.com.mv': { rc:'5794', name:'Ahmed Miushaan', designation:'Project Coordinator', role:'viewer', pass: 'SRD7485' }
+// ── User role map ─────────────────────────────────────────────────
+const USER_ROLES = {
+    'adam.muneef@mtcc.com.mv':    { rc:'7485', name:'Adam Muneef',    designation:'Senior Electrician',  role:'admin'  },
+    'ahmed.miushaan@mtcc.com.mv': { rc:'5794', name:'Ahmed Miushaan', designation:'Project Coordinator', role:'viewer' }
 };
 
 const PRI_CFG = {
@@ -276,7 +267,7 @@ let filterAsset="All", isLightMode=false, isSidebarOpen=false, lastUpdate="Never
 let realtimeListeners = [];
 
 // ── Loading UI ────────────────────────────────────────────────────
-function showLoad(msg="Processing...") {
+function showLoad(msg="Loading...") {
     document.getElementById('loading-msg').textContent = msg;
     document.getElementById('loading-overlay').style.display = 'flex';
 }
@@ -291,75 +282,65 @@ window.showToast = function(msg, isError=false) {
     setTimeout(() => { tc.innerHTML=''; }, 3500);
 };
 
-// ── Local Storage Wrapper ─────────────────────────────────────────
-const SafeStorage = {
-    getItem: function(key) {
-        try { return localStorage.getItem(key); } 
-        catch(e) { return sessionStorage.getItem(key) || null; }
-    },
-    setItem: function(key, value) {
-        try { localStorage.setItem(key, value); } 
-        catch(e) { 
-            try { sessionStorage.setItem(key, value); } catch(err) {}
-        }
-    }
-};
+// ── Firebase DB Functions ─────────────────────────────────────────
 
-function saveData() { 
-    try {
-        SafeStorage.setItem('ees_wo_data', JSON.stringify(orders)); 
-        SafeStorage.setItem('ees_worker_leaves', JSON.stringify(workerLeaves)); 
-        SafeStorage.setItem('ees_wo_last_update', lastUpdate); 
-    } catch(e) {}
-}
-
-// ── Background Firebase Sync (NEVER BLOCKS UI) ────────────────────
-function dbSaveWO(wo) {
-    if(!db) return Promise.resolve();
+// Save a single work order + its tasks to Firebase
+async function dbSaveWO(wo) {
     const woData = {
         id: wo.id, asset: wo.asset, date: wo.date, sr: wo.sr||"",
         svo: wo.svo||"", priority: wo.priority,
         overallProgress: wo.overallProgress,
-        assignees: wo.assignees||[], tasks: wo.tasks||[]
+        assignees: wo.assignees||[],
+        tasks: wo.tasks||[]
     };
-    return db.ref(`ees_wo/${wo.id}`).set(woData);
+    await db.ref(`ees_wo/${wo.id}`).set(woData);
 }
 
-function dbBatchSave(changedWOs) {
-    if(!db) return Promise.resolve();
+// Save all changed WOs in one batch (used after Excel import)
+async function dbBatchSave(changedWOs) {
     const updates = {};
     changedWOs.forEach(wo => {
         updates[`ees_wo/${wo.id}`] = {
             id: wo.id, asset: wo.asset, date: wo.date, sr: wo.sr||"",
             svo: wo.svo||"", priority: wo.priority,
             overallProgress: wo.overallProgress,
-            assignees: wo.assignees||[], tasks: wo.tasks||[]
+            assignees: wo.assignees||[],
+            tasks: wo.tasks||[]
         };
     });
-    return db.ref().update(updates);
+    await db.ref().update(updates);
 }
 
-function dbSaveLeave(rc, data) {
-    if(!db) return Promise.resolve();
-    if(!data || data.type==='None') return db.ref(`ees_leaves/${rc}`).remove();
-    else return db.ref(`ees_leaves/${rc}`).set({ type: data.type, from: data.from||"", to: data.to||"" });
+// Save leave for one worker
+async function dbSaveLeave(rc, data) {
+    if(!data || data.type==='None') {
+        await db.ref(`ees_leaves/${rc}`).remove();
+    } else {
+        await db.ref(`ees_leaves/${rc}`).set({ type: data.type, from: data.from||"", to: data.to||"" });
+    }
 }
 
-function dbSaveLastUpdate(ts) {
-    if(!db) return Promise.resolve();
-    return db.ref('ees_meta/lastUpdate').set(ts);
+// Save last import timestamp
+async function dbSaveLastUpdate(ts) {
+    await db.ref('ees_meta/lastUpdate').set(ts);
 }
 
+// Load all data from Firebase once
 async function dbLoadAll() {
-    if(!db) return;
-    const woSnap = await db.ref('ees_wo').once('value');
-    const leavesSnap = await db.ref('ees_leaves').once('value');
-    const metaSnap = await db.ref('ees_meta').once('value');
+    const [woSnap, leavesSnap, metaSnap] = await Promise.all([
+        db.ref('ees_wo').once('value'),
+        db.ref('ees_leaves').once('value'),
+        db.ref('ees_meta').once('value')
+    ]);
 
     const woData = woSnap.val() || {};
     orders = Object.values(woData).map(wo => ({
-        id: wo.id||"", asset: wo.asset||"", date: wo.date||"",
-        sr: wo.sr||"", svo: wo.svo||"", priority: wo.priority||"Minor",
+        id: wo.id||"",
+        asset: wo.asset||"",
+        date: wo.date||"",
+        sr: wo.sr||"",
+        svo: wo.svo||"",
+        priority: wo.priority||"Minor",
         overallProgress: wo.overallProgress||0,
         assignees: Array.isArray(wo.assignees) ? wo.assignees : [],
         tasks: Array.isArray(wo.tasks) ? wo.tasks : []
@@ -375,8 +356,8 @@ async function dbLoadAll() {
     lastUpdate = meta.lastUpdate || "Never";
 }
 
+// ── Real-time listener: auto-refresh when any device changes data ──
 function startRealtimeSync() {
-    if(!db) return;
     stopRealtimeSync();
 
     const woRef = db.ref('ees_wo');
@@ -385,7 +366,8 @@ function startRealtimeSync() {
         const data = snap.val() || {};
         orders = Object.values(data).map(wo => ({
             id: wo.id||"", asset: wo.asset||"", date: wo.date||"",
-            sr: wo.sr||"", svo: wo.svo||"", priority: wo.priority||"Minor",
+            sr: wo.sr||"", svo: wo.svo||"",
+            priority: wo.priority||"Minor",
             overallProgress: wo.overallProgress||0,
             assignees: Array.isArray(wo.assignees) ? wo.assignees : [],
             tasks: Array.isArray(wo.tasks) ? wo.tasks : []
@@ -412,67 +394,55 @@ function stopRealtimeSync() {
     realtimeListeners = [];
 }
 
-// ── Auth (INSTANT OFFLINE BYPASS) ─────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────
 
-window.handleLogin = function() {
-    const inputU = document.getElementById('login-u').value.trim().toLowerCase();
-    const inputP = document.getElementById('login-p').value.trim();
-    if(!inputU || !inputP) { loginErr="Please enter email and password."; renderApp(); return; }
+window.handleLogin = async function() {
+    const email = document.getElementById('login-u').value.trim().toLowerCase();
+    const pass  = document.getElementById('login-p').value.trim();
+    if(!email||!pass) { loginErr="Please enter email and password."; renderApp(); return; }
 
-    // 1. INSTANT LOCAL AUTHENTICATION
-    let matchedEmail = null;
-    let matchedUser = null;
-    
-    for (const [email, profile] of Object.entries(LOCAL_USERS)) {
-        const username = email.split('@')[0];
-        if ((inputU === email || inputU === username) && inputP === profile.pass) {
-            matchedEmail = email;
-            matchedUser = Object.assign({}, profile); // Clone
-            delete matchedUser.pass; // Remove password from session memory
-            break;
-        }
-    }
+    showLoad("Signing in...");
+    try {
+        await auth.signInWithEmailAndPassword(email, pass);
+        const profile = USER_ROLES[email];
+        if(!profile) { await auth.signOut(); hideLoad(); loginErr="Access denied for this account."; renderApp(); return; }
 
-    if (!matchedUser) {
-        loginErr = "Invalid Username, Email, or Password.";
+        currentUser = profile;
+        loggedIn = true;
+        loginErr = "";
+        view = "dashboard";
+
+        showLoad("Loading data...");
+        await dbLoadAll();
+        hideLoad();
         renderApp();
-        return;
-    }
+        startRealtimeSync();
 
-    // 2. LOG THE USER IN INSTANTLY LOCALLY
-    currentUser = matchedUser;
-    loggedIn = true;
-    loginErr = "";
-    view = "dashboard";
-    SafeStorage.setItem('ees_current_user', JSON.stringify(currentUser));
-    renderApp(); // Display the dashboard with offline data immediately
+        // Update online presence
+        db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+        db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
 
-    // 3. TRY FIREBASE IN THE BACKGROUND
-    if (auth && db) {
-        auth.signInWithEmailAndPassword(matchedEmail, inputP).then(async () => {
-            await dbLoadAll(); // Fetch latest from cloud
-            saveData(); // Save latest to local memory
-            startRealtimeSync();
-            db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
-            db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
-            renderApp(); // Update UI with live cloud data
-            showToast("✅ Connected to Live Cloud Database");
-        }).catch(e => {
-            console.warn("Firebase Auth Blocked by Firewall:", e.message);
-            showToast("⚠️ Firewall Detected: Running securely in Offline Mode", true);
-        });
-    } else {
-        showToast("⚠️ Running in Offline Mode", true);
+    } catch(e) {
+        hideLoad();
+        if(e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+            loginErr = "Wrong email or password.";
+        } else if(e.code === 'auth/invalid-api-key' || e.code === 'auth/configuration-not-found') {
+            loginErr = "Firebase not configured yet. Paste your firebaseConfig above.";
+        } else if(e.message && e.message.includes('fetch')) {
+            loginErr = "Cannot connect. Check your Firebase config in the code.";
+        } else {
+            loginErr = "Error: " + e.message;
+        }
+        renderApp();
     }
 };
 
-window.handleLogout = function() {
+window.handleLogout = async function() {
     stopRealtimeSync();
-    if(currentUser && db) db.ref(`ees_presence/${currentUser.rc}`).set(0).catch(e=>{});
-    if(auth) auth.signOut().catch(e=>{});
+    if(currentUser) db.ref(`ees_presence/${currentUser.rc}`).set(0);
+    await auth.signOut();
     loggedIn = false; currentUser = null; orders = []; workerLeaves = {};
-    SafeStorage.setItem('ees_current_user', ''); 
-    renderApp(); 
+    renderApp();
 };
 
 // ── UI Handlers ───────────────────────────────────────────────────
@@ -497,21 +467,15 @@ window.togglePassword = function() {
     },150);
 };
 
-window.saveLeaveUpdates = function(rc) {
+window.saveLeaveUpdates = async function(rc) {
     const type = document.getElementById('l-type').value;
     const from = document.getElementById('l-from')?.value||'';
     const to   = document.getElementById('l-to')?.value||'';
-    
     if(type==='None') delete workerLeaves[rc];
     else workerLeaves[rc] = {type,from,to};
-    
-    saveData(); // Instant local save
-    closeLeaveModal(); 
-    renderApp(); 
-    showToast("✅ Leave status saved");
-
-    // Background cloud sync
-    if(db) dbSaveLeave(rc, type==='None'?null:{type,from,to}).catch(e=>console.warn("Cloud save failed", e));
+    closeLeaveModal(); renderApp();
+    try { await dbSaveLeave(rc, type==='None'?null:{type,from,to}); showToast("✅ Leave status saved"); }
+    catch(e) { showToast("❌ Failed to save leave", true); }
 };
 
 window.openWOFromWorker = function(id) {
@@ -521,20 +485,20 @@ window.openWOFromWorker = function(id) {
     selectedWO=id; renderApp();
 };
 
-window.clearDatabase = function() {
-    if(!confirm("🚨 WARNING: This permanently deletes ALL data.\n\nAre you sure?")) return;
-    orders=[]; workerLeaves={}; lastUpdate="Never";
-    saveData(); // Instant local clear
-    showToast("🗑️ Database cleared");
-    renderApp();
-
-    // Background cloud sync
-    if(db) {
-        db.ref('ees_wo').remove().catch(e=>{});
-        db.ref('ees_leaves').remove().catch(e=>{});
-        db.ref('ees_meta').remove().catch(e=>{});
-    }
+window.clearDatabase = async function() {
+    if(!confirm("🚨 WARNING: This permanently deletes ALL data from Firebase.\n\nThis cannot be undone. Are you sure?")) return;
+    showLoad("Clearing database...");
+    try {
+        await db.ref('ees_wo').remove();
+        await db.ref('ees_leaves').remove();
+        await db.ref('ees_meta').remove();
+        orders=[]; workerLeaves={}; lastUpdate="Never";
+        showToast("🗑️ Database cleared");
+    } catch(e) { showToast("❌ Error clearing database", true); }
+    hideLoad(); renderApp();
 };
+
+// ── WO Modal sync ─────────────────────────────────────────────────
 
 function syncModal() {
     if(!selectedWO) return;
@@ -552,135 +516,15 @@ function syncModal() {
 window.addAssignee = function(rc) { if(!rc)return; syncModal(); const wo=orders.find(o=>o.id===selectedWO); if(!wo.assignees.includes(rc))wo.assignees.push(rc); renderApp(); };
 window.removeAssignee = function(rc) { syncModal(); const wo=orders.find(o=>o.id===selectedWO); wo.assignees=wo.assignees.filter(x=>x!==rc); renderApp(); };
 
-window.saveWOUpdates = function(woId) {
+window.saveWOUpdates = async function(woId) {
     syncModal();
     const wo = orders.find(o=>o.id===woId);
     let tp=0;
     wo.tasks.forEach(t => { t.progress=Math.min(100,Math.max(0,t.progress)); tp+=t.progress; });
     wo.overallProgress = wo.tasks.length>0 ? Math.round(tp/wo.tasks.length) : 0;
-    
-    saveData(); // Instant local save
-    renderApp(); 
-    showToast(`✅ Saved ${wo.id}`);
-
-    // Background cloud sync
-    if(db) dbSaveWO(wo).catch(e => console.warn("Cloud save failed", e));
-};
-
-// ── NEW Professional PDF Export ───────────────────────────────────
-
-window.exportDashboardPDF = function() {
-    if (typeof html2pdf === 'undefined') { showToast("PDF compiler loading... try again."); return; }
-    showToast("⏳ Generating EES Manpower Report...");
-
-    const stats = {};
-    let totalHead = 0, totalPresent = 0, totalLeave = 0;
-
-    WORKERS.forEach(w => {
-        if (!stats[w.designation]) {
-            stats[w.designation] = { headCount: 0, present: 0, onLeave: 0 };
-        }
-        stats[w.designation].headCount++;
-        totalHead++;
-
-        const lv = workerLeaves[w.rc];
-        if (lv && lv.type && lv.type !== 'None') {
-            stats[w.designation].onLeave++;
-            totalLeave++;
-        } else {
-            stats[w.designation].present++;
-            totalPresent++;
-        }
-    });
-
-    let tableRows = '';
-    for (const [desig, data] of Object.entries(stats)) {
-        tableRows += `
-            <tr>
-                <td style="border: 1px solid #000; padding: 10px; font-weight: 500;">${desig}</td>
-                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.headCount}</td>
-                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.present}</td>
-                <td style="border: 1px solid #000; padding: 10px; text-align: center;">${data.onLeave}</td>
-            </tr>
-        `;
-    }
-
-    const reportDiv = document.createElement('div');
-    reportDiv.style.width = '800px'; 
-    reportDiv.style.padding = '40px';
-    reportDiv.style.backgroundColor = '#ffffff';
-    reportDiv.style.color = '#000000';
-    reportDiv.style.fontFamily = "'DM Sans', sans-serif";
-    
-    const d = new Date();
-    const day = d.getDate();
-    const suffix = ["th", "st", "nd", "rd"][(day % 10 > 3 || Math.floor(day % 100 / 10) === 1) ? 0 : day % 10];
-    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const dateStr = `${day}${suffix} ${months[d.getMonth()]} ${d.getFullYear()}`;
-
-    reportDiv.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
-            <div style="font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;line-height:1;">EES WO<br>DATABASE</div>
-            <div style="text-align: center; flex: 1; padding-top: 15px;">
-                <h2 style="margin: 0; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; text-decoration: underline;">EES MANPOWER REPORT</h2>
-            </div>
-            <div style="text-align: right; font-size: 14px; font-weight: 600; padding-top: 20px;">
-                ${dateStr}
-            </div>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 60px; font-size: 14px;">
-            <thead>
-                <tr style="background-color: #f8fafc;">
-                    <th style="border: 1px solid #000; padding: 12px; text-align: left; font-weight: 700;">Designation</th>
-                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">Head Count</th>
-                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">Present</th>
-                    <th style="border: 1px solid #000; padding: 12px; text-align: center; font-weight: 700;">On-Leave</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${tableRows}
-                <tr style="font-weight: 700; background-color: #f1f5f9;">
-                    <td style="border: 1px solid #000; padding: 12px; text-align: right;">Total</td>
-                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalHead}</td>
-                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalPresent}</td>
-                    <td style="border: 1px solid #000; padding: 12px; text-align: center;">${totalLeave}</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div style="display: flex; justify-content: space-between; margin-top: 80px;">
-            <div style="text-align: left; width: 250px;">
-                <div style="font-weight: 600; font-size: 14px; margin-bottom: 40px;">Prepared by:</div>
-                <div style="border-bottom: 1px solid #000; height: 10px; margin-bottom: 5px;"></div>
-                <div style="font-weight: 700; font-size: 14px;">${currentUser.name}</div>
-                <div style="font-size: 12px; color: #475569;">${currentUser.designation}</div>
-            </div>
-            <div style="text-align: left; width: 250px;">
-                <div style="font-weight: 600; font-size: 14px; margin-bottom: 40px;">Approved by:</div>
-                <div style="border-bottom: 1px solid #000; height: 10px; margin-bottom: 5px;"></div>
-                <div style="font-weight: 700; font-size: 14px;"><br/></div>
-                <div style="font-size: 12px; color: #475569;"><br/></div>
-            </div>
-        </div>
-    `;
-
-    reportDiv.style.position = 'absolute';
-    reportDiv.style.left = '-9999px';
-    document.body.appendChild(reportDiv);
-
-    const opt = {
-        margin:       0.5,
-        filename:     `EES_Manpower_Report_${new Date().toISOString().slice(0,10)}.pdf`,
-        image:        { type: 'jpeg', quality: 1 },
-        html2canvas:  { scale: 2, useCORS: true },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-    };
-
-    html2pdf().set(opt).from(reportDiv).save().then(() => {
-        document.body.removeChild(reportDiv);
-        showToast("✅ Report Downloaded!");
-    });
+    renderApp(); // instant UI
+    try { await dbSaveWO(wo); showToast(`✅ Saved ${wo.id}`); }
+    catch(e) { console.error(e); showToast("❌ Save failed — check connection", true); }
 };
 
 // ── Excel Export ──────────────────────────────────────────────────
@@ -699,13 +543,21 @@ window.exportExcel = function() {
     document.body.insertAdjacentHTML('beforeend',`<div class="overlay" id="dlm" onclick="if(event.target===this)this.remove()"><div class="modal" style="max-width:380px;background:var(--surface);"><div class="modal-head"><div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;">Export Ready 📊</div><button onclick="document.getElementById('dlm').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;">✕</button></div><div class="modal-body" style="text-align:center;padding:30px;"><div style="color:var(--muted);font-size:13px;margin-bottom:20px;">Your data is compiled and ready to download.</div><a href="${url}" download="${fn}" class="btn btn-primary" style="text-decoration:none;padding:14px;width:100%;justify-content:center;font-size:14px;" onclick="setTimeout(()=>document.getElementById('dlm').remove(),500)">⬇️ Download ${isX?'Excel':'CSV'}</a><button class="btn btn-ghost" style="margin-top:10px;width:100%;justify-content:center;" onclick="document.getElementById('dlm').remove()">Cancel</button></div></div></div>`);
 };
 
+window.exportDashboardPDF = function() {
+    if(typeof html2pdf==='undefined'){showToast("PDF loading...");return;}
+    showToast("⏳ Generating PDF...");
+    const el=document.getElementById('dashboard-content');
+    const bg=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()||'#000';
+    html2pdf().set({margin:[.5,.5,.5,.5],filename:`EES_Report_${new Date().toISOString().slice(0,10)}.pdf`,image:{type:'jpeg',quality:1},html2canvas:{scale:2,backgroundColor:bg,useCORS:true},jsPDF:{unit:'in',format:'a3',orientation:'portrait'}}).from(el).save().then(()=>showToast("✅ PDF Downloaded!"));
+};
+
 // ── Excel Import ──────────────────────────────────────────────────
 
 window.processExcel = async function(file) {
     if(!window.XLSX){showToast("⏳ Library loading...");return;}
     const reader=new FileReader();
     reader.onload=async(e)=>{
-        showLoad("Processing Excel...");
+        showLoad("Reading Excel file...");
         try {
             const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
             const ws=wb.Sheets[wb.SheetNames[0]];
@@ -737,13 +589,10 @@ window.processExcel = async function(file) {
                 else if(isBadDate(wo.date)&&ed)wo.date=ed;
 
                 const tn=String(r["TASK NO:"]||`Task-${wo.tasks.length+1}`).trim();
-                const taskExists = wo.tasks.find(t => t.taskNo === tn);
-                
-                let eStart = formatForInput(r[sk]);
-                let eEnd = formatForInput(r[ck]);
-                let eDetails = String(r[dk]||r["TASK DETAILS"]||"").trim();
-                let eRem = String(r[rk]||"").trim();
-                
+                const es=formatForInput(r[sk]),ee=formatForInput(r[ck]);
+                const edet=String(r[dk]||r["TASK DETAILS"]||"").trim();
+                const er=String(r[rk]||"").trim();
+
                 let pv=r[pk],pn=0;
                 if(typeof pv==='number')pn=pv;else if(typeof pv==='string')pn=parseFloat(pv.replace("%",""))||0;
                 if(pn>0&&pn<=1)pn*=100;
@@ -755,36 +604,20 @@ window.processExcel = async function(file) {
                 else if(rawSt.includes("comp"))st="Completed";
                 else if(rawSt.includes("canc"))st="Cancelled";
 
-                if (!taskExists) {
-                    wo.tasks.push({taskNo:tn,details:eDetails,status:st,startDate:eStart,progress:pn,completeDate:eEnd,remarks:eRem});
-                    added++;changed.set(wo.id,wo);
-                } else {
-                    let c=false;
-                    if(eStart&&(isBadDate(taskExists.startDate)||taskExists.startDate!==eStart)){taskExists.startDate=eStart;c=true;}
-                    if(eEnd&&(isBadDate(taskExists.completeDate)||taskExists.completeDate!==eEnd)){taskExists.completeDate=eEnd;c=true;}
-                    if(eDetails&&taskExists.details!==eDetails){taskExists.details=eDetails;c=true;}
-                    if(r[stk]&&taskExists.status!==st){taskExists.status=st;c=true;}
-                    if(r[pk]!==undefined&&r[pk]!==""&&taskExists.progress!==pn){taskExists.progress=pn;c=true;}
-                    if(eRem&&taskExists.remarks!==eRem){taskExists.remarks=eRem;c=true;}
-                    if(c){updated++;changed.set(wo.id,wo);}
-                }
+                const tx=wo.tasks.find(t=>t.taskNo===tn);
+                if(!tx){wo.tasks.push({taskNo:tn,details:edet,status:st,startDate:es,progress:pn,completeDate:ee,remarks:er});added++;changed.set(wo.id,wo);}
+                else{let c=false;if(es&&(isBadDate(tx.startDate)||tx.startDate!==es)){tx.startDate=es;c=true;}if(ee&&(isBadDate(tx.completeDate)||tx.completeDate!==ee)){tx.completeDate=ee;c=true;}if(edet&&tx.details!==edet){tx.details=edet;c=true;}if(r[stk]&&tx.status!==st){tx.status=st;c=true;}if(r[pk]!==undefined&&r[pk]!==""&&tx.progress!==pn){tx.progress=pn;c=true;}if(er&&tx.remarks!==er){tx.remarks=er;c=true;}if(c){updated++;changed.set(wo.id,wo);}}
             });
 
             changed.forEach(wo=>{if(wo.tasks.length){let tp=0;wo.tasks.forEach(t=>tp+=t.progress);wo.overallProgress=Math.round(tp/wo.tasks.length);}});
 
             if(changed.size>0){
-                // Instant local save
-                orders = [...orders];
+                showLoad(`Saving ${changed.size} work orders to Firebase...`);
+                await dbBatchSave([...changed.values()]);
                 lastUpdate=new Date().toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"});
-                saveData();
+                await dbSaveLastUpdate(lastUpdate);
                 showToast(`✅ Added ${added} new tasks, updated ${updated} existing`);
                 setView('orders');
-
-                // Background cloud sync
-                if (db) {
-                    dbBatchSave([...changed.values()]).catch(e=>{});
-                    dbSaveLastUpdate(lastUpdate).catch(e=>{});
-                }
             } else {
                 showToast("⚠️ No changes — database already up to date.");
             }
@@ -808,14 +641,18 @@ function getSidebarHTML() {
     const iv = currentUser?.role==='viewer';
     let onlineHtml = "";
     if(currentUser?.role==='admin') {
-        const viewerPing = parseInt(SafeStorage.getItem('ees_online_5794')) || 0;
-        const isViewerOnline = (Date.now() - viewerPing) < (5 * 60 * 1000); 
-        onlineHtml=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--border);"><span style="color:var(--text);font-weight:600;">Ahmed Miushaan</span><span id="viewer-status">${isViewerOnline?'<span style="color:var(--green);font-weight:700;">🟢 Online</span>':'<span style="color:var(--red);font-weight:600;">🔴 Offline</span>'}</span></div>`;
+        db.ref('ees_presence/5794').once('value').then(snap => {
+            const t=snap.val()||0;
+            const online=(Date.now()-t)<300000;
+            const el=document.getElementById('viewer-status');
+            if(el) el.innerHTML=online?'<span style="color:var(--green);font-weight:700;">🟢 Online</span>':'<span style="color:var(--red);font-weight:600;">🔴 Offline</span>';
+        });
+        onlineHtml=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);"><span style="color:var(--text);font-weight:600;">Ahmed Miushaan</span><span id="viewer-status"><span style="color:var(--red);font-weight:600;">🔴 Offline</span></span></div>`;
     }
     return `
     <aside class="sidebar ${isSidebarOpen?'show':''}">
         <div class="logo">
-            <div style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1px;line-height:1.2;margin-top:10px;margin-bottom:5px;">EES WO CONTROL<br>DATABASE</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1px;line-height:1.2;">EES WO CONTROL<br>DATABASE</div>
         </div>
         <div class="nav-grp"><div class="nav-grp-lbl">Main</div>
             <div class="nav-item ${view==='dashboard'?'active':''}" onclick="setView('dashboard')"><span>📊</span> Dashboard</div>
@@ -827,13 +664,13 @@ function getSidebarHTML() {
         </div>
         <div class="nav-grp"><div class="nav-grp-lbl">Reports & Data</div>
             ${!iv?`<div class="nav-item ${view==='upload'?'active':''}" onclick="setView('upload')"><span>⬆️</span> Manage Data</div>`:''}
-            <div class="nav-item" onclick="exportExcel()"><span>⬇️</span> Export Excel Data</div>
+            <div class="nav-item" onclick="exportExcel()"><span>⬇️</span> Export Excel</div>
         </div>
         <div class="sidebar-foot">
             ${onlineHtml}
             <div class="user-card">
-                <div class="avc">${ini(currentUser?.name)}</div>
-                <div><div class="user-name">${currentUser?.name}</div><div class="user-role">${currentUser?.designation}</div></div>
+                <div class="avc">${ini(currentUser.name)}</div>
+                <div><div class="user-name">${currentUser.name}</div><div class="user-role">${currentUser.designation}</div></div>
             </div>
             <div class="theme-row">
                 <span style="font-size:12px;color:var(--muted);font-weight:600;">Light Mode</span>
@@ -854,8 +691,8 @@ function renderApp() {
             <div class="login-title">EES WO CONTROL DATABASE</div>
             <div class="login-subtitle">MTCC</div>
             <div class="login-inp-group">
-                <label class="login-lbl">Email / Username</label>
-                <input id="login-u" class="login-inp" type="text" placeholder="Enter username or email" onkeydown="if(event.key==='Enter')handleLogin()">
+                <label class="login-lbl">Email</label>
+                <input id="login-u" class="login-inp" type="text" placeholder="your.name@mtcc.com.mv" onkeydown="if(event.key==='Enter')handleLogin()">
                 <label class="login-lbl">Password</label>
                 <div class="pwd-container">
                     <input id="login-p" class="login-inp" type="password" placeholder="Enter password" style="padding-right:40px" onkeydown="if(event.key==='Enter')handleLogin()">
@@ -873,7 +710,8 @@ function renderApp() {
         return;
     }
 
-    if(currentUser && db) db.ref(`ees_presence/${currentUser.rc}`).set(Date.now()).catch(e=>{});
+    // Update presence ping
+    if(currentUser) db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
 
     const isViewer = currentUser?.role==='viewer';
     const dis = isViewer?'disabled':'';
@@ -902,11 +740,11 @@ function renderApp() {
                 <div class="ts-item"><div class="ts-val" style="color:var(--green)">${tC}</div><div class="ts-lbl">Completed</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--red)">${tCn}</div><div class="ts-lbl">Cancelled</div></div>
             </div></div>
-            <div><div class="sec-title" style="color:var(--red);">🚨 Urgent & Critical Active WOs</div><div class="wo-list">
+            <div><div class="sec-title" style="color:var(--red);">🚨 Urgent & Critical</div><div class="wo-list">
                 ${uc.length===0?`<div style="padding:18px;color:var(--muted);background:var(--card);border-radius:8px;">No Urgent/Critical items.</div>`:''}
                 ${uc.map(o=>`<div class="wo-card" style="border-left-color:${PRI_CFG[o.priority].color}" onclick="selectOrder('${o.id}');setView('orders')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog">Prog: ${o.overallProgress}%</div></div></div>`).join('')}
             </div></div>
-            <div><div class="sec-title" style="color:var(--green);">🟢 Ongoing Active WOs</div><div class="wo-list">
+            <div><div class="sec-title" style="color:var(--green);">🟢 Ongoing WOs</div><div class="wo-list">
                 ${og.length===0?`<div style="padding:18px;color:var(--muted);background:var(--card);border-radius:8px;">No Ongoing items.</div>`:''}
                 ${og.map(o=>`<div class="wo-card ongoing-glow" onclick="selectOrder('${o.id}');setView('orders')"><div class="wo-col left"><div class="wo-id">${o.id}</div><div class="wo-asset">${o.asset}</div></div><div class="wo-col center"><div class="wo-date">${formatDateNice(o.date)}</div><div class="wo-tasks">${o.tasks.length} Tasks</div></div><div class="wo-col right">${PTagHTML(o.priority)}<div class="wo-prog">Prog: ${o.overallProgress}%</div></div></div>`).join('')}
             </div></div>
@@ -992,42 +830,28 @@ function renderApp() {
         }
     }
 
-    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||\"\"}</div></div>${topbarExtra}</div><div class="body-wrap"><div class=\"content\">${contentHtml}</div>${detailHtml}</div></div></div>`;
+    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content">${contentHtml}</div>${detailHtml}</div></div></div>`;
 }
 
-// ── Boot Application Instantly (Offline First) ───────────────────
-const initApp = () => {
-    // Check local memory first for instant load
-    const savedUser = SafeStorage.getItem('ees_current_user');
-    if (savedUser) {
-        try {
-            currentUser = JSON.parse(savedUser);
-            loggedIn = true;
-            view = "dashboard";
-        } catch(e) {}
+// ── Init: check if user already signed in ─────────────────────────
+auth.onAuthStateChanged(async user => {
+    if(user) {
+        const profile = USER_ROLES[user.email];
+        if(profile) {
+            currentUser=profile; loggedIn=true; view="dashboard";
+            showLoad("Loading your data...");
+            try { await dbLoadAll(); } catch(e) { console.error(e); }
+            hideLoad(); renderApp();
+            startRealtimeSync();
+            db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
+            db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
+        } else {
+            hideLoad(); renderApp();
+        }
+    } else {
+        hideLoad(); renderApp();
     }
-
-    // Instantly render UI without waiting for network
-    document.getElementById('loading-overlay').style.display = 'none';
-    renderApp();
-
-    // Now try to securely connect to Firebase in the background
-    if (loggedIn && typeof firebase !== 'undefined') {
-        auth.onAuthStateChanged(async fbUser => {
-            if (fbUser) {
-                try {
-                    await dbLoadAll();
-                    startRealtimeSync();
-                    db.ref(`ees_presence/${currentUser.rc}`).set(Date.now());
-                    db.ref(`ees_presence/${currentUser.rc}`).onDisconnect().set(0);
-                    renderApp(); // Update silently with live data
-                } catch(e) {}
-            }
-        });
-    }
-};
-
-initApp();
+});
 </script>
 </body>
 </html>
