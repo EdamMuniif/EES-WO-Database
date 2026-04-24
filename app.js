@@ -193,18 +193,16 @@ async function loadUserProfile(firebaseUser) {
 }
 
 async function auditLog(action, payload = {}) {
-    // Day 5: audit logging must never break the main work action.
-    // If rules/network fail, the user action can still succeed and the error is logged locally.
+    // Audit records use Firebase server time only.
+    // No client Date.now() is used for audit ordering.
     if (!currentUser) return null;
 
     try {
-        const stamp = Date.now();
-        const rc = safeFirebaseKey(currentUser.rc || "unknown");
-        const key = `${stamp}_${rc}_${Math.random().toString(36).slice(2, 8)}`;
+        const auditRef = db.ref("ees_audit").push();
 
-        await db.ref(`ees_audit/${key}`).set({
-            action,
-            payload,
+        await auditRef.set({
+            action: String(action || "UNKNOWN_ACTION"),
+            payload: payload || {},
             user: {
                 uid: auth.currentUser?.uid || currentUser.uid || "",
                 rc: currentUser.rc || "",
@@ -215,12 +213,14 @@ async function auditLog(action, payload = {}) {
             createdAt: firebase.database.ServerValue.TIMESTAMP
         });
 
-        return key;
+        return auditRef.key;
     } catch (error) {
         console.warn("Audit log failed", { action, error });
         return null;
     }
 }
+
+window.auditLog = auditLog;
 
 async function backupOperationalData(reason = "manual_backup") {
     assertAdmin("create database backups");
@@ -594,6 +594,11 @@ function renderPaginationControls(paged) {
 
 // ── App State ─────────────────────────────────────────────────────
 let loggedIn=false, currentUser=null, loginErr="", view="dashboard";
+window.currentUser = currentUser;
+function publishCurrentUser() {
+    window.currentUser = currentUser;
+    window.dispatchEvent(new CustomEvent("ees:userchange", { detail: currentUser }));
+}
 let orders=[], workerLeaves={};
 let selectedWO=null, selectedWorker=null, leaveModalWorker=null;
 const orderViewState = {
@@ -777,6 +782,7 @@ window.handleLogin = async function() {
 
         currentUser = profile;
         loggedIn = true;
+        publishCurrentUser();
         loginErr = "";
         view = "dashboard";
 
@@ -804,7 +810,7 @@ window.handleLogout = async function() {
     stopRealtimeSync();
     if(currentUser) db.ref(`ees_presence/${safeFirebaseKey(currentUser.rc)}`).set(0);
     await auth.signOut();
-    loggedIn = false; currentUser = null; orders = []; workerLeaves = {};
+    loggedIn = false; currentUser = null; publishCurrentUser(); orders = []; workerLeaves = {};
     renderApp();
 };
 
@@ -2090,14 +2096,16 @@ auth.onAuthStateChanged(async user => {
     if(user) {
         const profile = await loadUserProfile(user);
         if(profile) {
-            currentUser=profile; loggedIn=true; view="dashboard";
+            currentUser=profile; loggedIn=true; view="dashboard"; publishCurrentUser();
             showLoad("Loading your data...");
             try { await dbLoadAll(); } catch(e) { console.error(e); }
             hideLoad(); renderApp();
             startRealtimeSync();        } else {
+            currentUser=null; loggedIn=false; publishCurrentUser();
             hideLoad(); renderApp();
         }
     } else {
+        currentUser=null; loggedIn=false; publishCurrentUser();
         hideLoad(); renderApp();
     }
 });

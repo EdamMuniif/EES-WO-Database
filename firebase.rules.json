@@ -14,8 +14,70 @@
     "ees_wo": {
       ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
       ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+
       "$woId": {
-        ".validate": "newData.hasChildren(['id', 'asset', 'priority', 'overallProgress', 'assignees', 'tasks']) && newData.child('id').isString() && newData.child('asset').isString() && (newData.child('priority').val() == 'Minor' || newData.child('priority').val() == 'Major' || newData.child('priority').val() == 'Urgent' || newData.child('priority').val() == 'Critical') && newData.child('overallProgress').isNumber() && newData.child('overallProgress').val() >= 0 && newData.child('overallProgress').val() <= 100"
+        ".validate": "newData.hasChildren(['id', 'asset', 'priority', 'overallProgress', 'assignees', 'tasks']) && newData.child('id').isString() && newData.child('asset').isString() && (newData.child('priority').val() == 'Minor' || newData.child('priority').val() == 'Major' || newData.child('priority').val() == 'Urgent' || newData.child('priority').val() == 'Critical') && newData.child('overallProgress').isNumber() && newData.child('overallProgress').val() >= 0 && newData.child('overallProgress').val() <= 100",
+
+        "id": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+        },
+        "asset": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "date": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "sr": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "svo": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "priority": {
+          ".validate": "newData.val() == 'Minor' || newData.val() == 'Major' || newData.val() == 'Urgent' || newData.val() == 'Critical'"
+        },
+        "overallProgress": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+        },
+        "assignees": {
+          "$index": {
+            ".validate": "newData.isString()"
+          }
+        },
+        "tasks": {
+          ".validate": "newData.exists()",
+          "$taskIndex": {
+            ".validate": "newData.hasChildren(['taskNo', 'details', 'status', 'progress', 'remarks'])",
+
+            "taskNo": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+            },
+            "details": {
+              ".validate": "newData.isString() && newData.val().length <= 3000"
+            },
+            "status": {
+              ".validate": "newData.isString() && (newData.val() == 'Pending' || newData.val() == 'Ongoing' || newData.val() == 'Onhold' || newData.val() == 'Completed' || newData.val() == 'Cancelled')"
+            },
+            "progress": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+            },
+            "startDate": {
+              ".validate": "!newData.exists() || newData.isString()"
+            },
+            "completeDate": {
+              ".validate": "!newData.exists() || newData.isString()"
+            },
+            "remarks": {
+              ".validate": "newData.isString() && newData.val().length <= 3000"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     },
 
@@ -42,7 +104,10 @@
 
     "ees_audit": {
       ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'"
+      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+      "$auditId": {
+        ".validate": "newData.hasChildren(['action', 'createdAt']) && newData.child('action').isString() && newData.child('createdAt').isNumber()"
+      }
     },
 
     "ees_backups": {

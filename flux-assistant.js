@@ -10,7 +10,7 @@
  *
  *  ARCHITECTURE
  *  ────────────
- *   User types → Claude API → JSON action → Validator → Firebase write
+ *   User types → Gemini via Netlify Function → JSON action → Validator → Firebase write
  *                                                   ↓
  *                                           Audit log + 2-sec undo
  *
@@ -25,7 +25,7 @@
  *  DEPLOY
  *  ──────
  *   1. Deploy netlify/functions/flux.js first
- *   2. Set ANTHROPIC_API_KEY env var in Netlify
+ *   2. Set GEMINI_API_KEY env var in Netlify
  *   3. Replace this flux-assistant.js in your site
  *   4. Redeploy
  * ════════════════════════════════════════════════════════════════════
@@ -39,7 +39,7 @@
     // ───────────────────────────────────────────────────────────────
 
     const FLUX_VERSION = "2.1.0-gemini";
-    const FLUX_MODEL = "gemini-flash-latest";
+    const FLUX_MODEL = "gemini-2.5-flash";
     const FLUX_ENDPOINT = "/.netlify/functions/flux";
     const UNDO_WINDOW_MS = 2500; // 2.5 seconds
 
@@ -100,6 +100,24 @@
         return d.toTimeString().slice(0, 5);
     }
 
+    function safeFirebaseKey(value) {
+        return String(value ?? "")
+            .trim()
+            .replace(/[.#$/\[\]]/g, "_")
+            .slice(0, 120);
+    }
+
+    function getWORef(id, childPath = "") {
+        const db = getDb();
+        if (!db) throw new Error("Firebase database unavailable.");
+
+        const key = safeFirebaseKey(id);
+        if (!key) throw new Error("Invalid WO ID.");
+
+        const suffix = childPath ? `/${childPath}` : "";
+        return db.ref(`${DATA_PATHS.workOrders}/${key}${suffix}`);
+    }
+
     // ───────────────────────────────────────────────────────────────
     //  FIREBASE ACCESSORS (Flux never bypasses app rules)
     // ───────────────────────────────────────────────────────────────
@@ -124,7 +142,8 @@
     async function readWO(id) {
         const db = getDb();
         if (!db) return null;
-        const snap = await db.ref(`${DATA_PATHS.workOrders}/${id}`).once("value");
+
+        const snap = await getWORef(id).once("value");
         return snap.val();
     }
 
@@ -149,14 +168,19 @@
     async function snapshotAudit(limit = 5) {
         const db = getDb();
         if (!db) return [];
+
         const snap = await db
             .ref(DATA_PATHS.audit)
-            .orderByChild("timestamp")
+            .orderByChild("createdAt")
             .limitToLast(limit)
             .once("value");
+
         const entries = [];
         snap.forEach(child => entries.push(child.val()));
-        return entries.reverse();
+
+        return entries
+            .filter(Boolean)
+            .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -168,17 +192,23 @@
         if (typeof window.auditLog === "function") {
             try { await window.auditLog(`FLUX_${action}`, combined); return; } catch {}
         }
-        // Fallback: direct write
+        // Fallback: direct write with Firebase server timestamp.
         const db = getDb();
         const auth = getAuth();
         if (!db) return;
         try {
-            const key = db.ref(DATA_PATHS.audit).push().key;
-            await db.ref(`${DATA_PATHS.audit}/${key}`).set({
+            const auditRef = db.ref(DATA_PATHS.audit).push();
+
+            await auditRef.set({
                 action: `FLUX_${action}`,
                 payload: combined,
-                timestamp: Date.now(),
-                userEmail: auth?.currentUser?.email || "unknown"
+                user: {
+                    uid: auth?.currentUser?.uid || "",
+                    email: auth?.currentUser?.email || ""
+                },
+                source: "flux",
+                fluxVersion: FLUX_VERSION,
+                createdAt: firebase.database.ServerValue.TIMESTAMP
             });
         } catch (err) {
             console.warn("Flux audit log failed:", err);
@@ -225,7 +255,7 @@
                 const wo = await readWO(id);
                 if (!wo) throw new Error(`WO ${id} not found`);
                 const prev = { priority: wo.priority };
-                await getDb().ref(`${DATA_PATHS.workOrders}/${id}/priority`).set(priority);
+                await getWORef(id, "priority").set(priority);
                 return { updated: true, previous: prev };
             }
         },
@@ -255,7 +285,7 @@
                 // Recompute overall
                 const total = tasks.reduce((acc, t) => acc + (t.progress || 0), 0);
                 const overall = tasks.length > 0 ? Math.round(total / tasks.length) : 0;
-                await getDb().ref(`${DATA_PATHS.workOrders}/${id}`).update({
+                await getWORef(id).update({
                     tasks,
                     overallProgress: overall
                 });
@@ -278,7 +308,7 @@
                 tasks[taskIndex] = { ...tasks[taskIndex], progress };
                 const total = tasks.reduce((acc, t) => acc + (t.progress || 0), 0);
                 const overall = tasks.length > 0 ? Math.round(total / tasks.length) : 0;
-                await getDb().ref(`${DATA_PATHS.workOrders}/${id}`).update({
+                await getWORef(id).update({
                     tasks,
                     overallProgress: overall
                 });
@@ -298,7 +328,7 @@
                 if (assignees.includes(rc)) return { updated: false, reason: "already assigned" };
                 const prev = { assignees: [...assignees] };
                 assignees.push(rc);
-                await getDb().ref(`${DATA_PATHS.workOrders}/${id}/assignees`).set(assignees);
+                await getWORef(id, "assignees").set(assignees);
                 return { updated: true, previous: prev };
             }
         },
@@ -315,7 +345,7 @@
                 const prev = { assignees: [...assignees] };
                 const filtered = assignees.filter(x => x !== rc);
                 if (filtered.length === assignees.length) return { updated: false, reason: "not assigned" };
-                await getDb().ref(`${DATA_PATHS.workOrders}/${id}/assignees`).set(filtered);
+                await getWORef(id, "assignees").set(filtered);
                 return { updated: true, previous: prev };
             }
         },
@@ -338,7 +368,7 @@
                     ? `${existing}\n[${stamp} Flux] ${remark}`
                     : `[${stamp} Flux] ${remark}`;
                 tasks[taskIndex] = { ...tasks[taskIndex], remarks: newRemark };
-                await getDb().ref(`${DATA_PATHS.workOrders}/${id}/tasks`).set(tasks);
+                await getWORef(id, "tasks").set(tasks);
                 return { updated: true, previous: prev };
             }
         }
@@ -454,10 +484,10 @@
 
         try {
             const db = getDb();
-            const path = `${DATA_PATHS.workOrders}/${snap.id}`;
+            const baseRef = getWORef(snap.id);
 
             if (snap.action === "UPDATE_WO_PRIORITY") {
-                await db.ref(`${path}/priority`).set(snap.previous.priority);
+                await getWORef(snap.id, "priority").set(snap.previous.priority);
             } else if (snap.action === "UPDATE_TASK_STATUS" || snap.action === "UPDATE_TASK_PROGRESS" || snap.action === "ADD_TASK_REMARK") {
                 const wo = await readWO(snap.id);
                 const tasks = [...(wo.tasks || [])];
@@ -466,10 +496,10 @@
                     // Recompute overall progress
                     const total = tasks.reduce((a, t) => a + (t.progress || 0), 0);
                     const overall = tasks.length > 0 ? Math.round(total / tasks.length) : 0;
-                    await db.ref(path).update({ tasks, overallProgress: overall });
+                    await baseRef.update({ tasks, overallProgress: overall });
                 }
             } else if (snap.action === "ADD_ASSIGNEE" || snap.action === "REMOVE_ASSIGNEE") {
-                await db.ref(`${path}/assignees`).set(snap.previous.assignees || []);
+                await getWORef(snap.id, "assignees").set(snap.previous.assignees || []);
             }
 
             await logFluxAction("ACTION_UNDONE", { action: snap.action, id: snap.id });
@@ -481,14 +511,27 @@
     }
 
     // ───────────────────────────────────────────────────────────────
-    //  SYSTEM PROMPT — the contract between Flux UI and Claude
+    //  SYSTEM PROMPT — the contract between Flux UI and Gemini
     // ───────────────────────────────────────────────────────────────
+
+    function getFluxTrainingText() {
+        const training = window.FLUX_TRAINING;
+
+        if (!training || !Array.isArray(training.examples) || training.examples.length === 0) {
+            return "";
+        }
+
+        return training.examples
+            .map(example => `- ${example}`)
+            .join("\n");
+    }
 
     function buildSystemPrompt() {
         const userName = window.currentUser?.name || "Admin";
         const workersList = WORKERS
             .map(w => `  - RC ${w.rc}: ${w.name}`)
             .join("\n");
+        const trainingText = getFluxTrainingText();
 
         return `You are Flux, the operational AI agent for the EES (Electrical & Electronic Services) Work Order Control Database at MTCC.
 
@@ -568,15 +611,17 @@ You: \`\`\`json
 System: Signal Confirmed: Task 3 on WO-2847-EEW is now Completed (progress: 100%).
 You: Done ✅ Task 3 on WO-2847-EEW is now Completed.
 
+${trainingText ? `\nADDITIONAL USER PHRASES TO UNDERSTAND\n${trainingText}\n` : ""}
+
 TONE
 Concise. Operational. No fluff. You are a tool, not a chatbot.`;
     }
 
     // ───────────────────────────────────────────────────────────────
-    //  CLAUDE API CALLER (via Netlify Function)
+    //  GEMINI API CALLER (via Netlify Function)
     // ───────────────────────────────────────────────────────────────
 
-    async function askClaude(userMessage, contextData) {
+    async function askFluxModel(userMessage, contextData) {
         // Build multi-turn context
         conversationHistory.push({
             role: "user",
@@ -623,7 +668,7 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
     }
 
     // ───────────────────────────────────────────────────────────────
-    //  JSON EXTRACTOR — pulls action blocks out of Claude's response
+    //  JSON EXTRACTOR — pulls action blocks out of Gemini's response
     // ───────────────────────────────────────────────────────────────
 
     function extractActionJSON(text) {
@@ -730,19 +775,19 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
                 addPulse(`⚡ Loaded ${wos.length} WOs + ${audits.length} audit entries`);
             }
 
-            const reply = await askClaude(userMsg, context);
+            const reply = await askFluxModel(userMsg, context);
 
             const actionJson = extractActionJSON(reply);
 
             if (actionJson) {
-                // Claude wants to DO something
+                // Gemini wants to DO something
                 const spec = ALLOWED_ACTIONS[actionJson.action];
                 if (spec && !spec.isWrite) {
                     // Read action — execute and feed back
                     addPulse(`⚡ Reading: ${actionJson.action}`);
                     const result = await processAgentAction(actionJson);
-                    // Feed result back to Claude for final natural-language reply
-                    const followup = await askClaude(
+                    // Feed result back to Gemini for final natural-language reply
+                    const followup = await askFluxModel(
                         `[SIGNAL CONFIRMED]\nResult: ${JSON.stringify(result).slice(0, 1500)}\n\nNow give the user a concise natural-language summary.`,
                         null
                     );
@@ -754,8 +799,8 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
                     try {
                         const outcome = await processAgentAction(actionJson);
                         addPulse(`✓ Signal confirmed`);
-                        // Feed confirmation back so Claude can explain
-                        const followup = await askClaude(
+                        // Feed confirmation back so Gemini can explain
+                        const followup = await askFluxModel(
                             `[SIGNAL CONFIRMED]\nAction: ${actionJson.action}\nResult: ${JSON.stringify(outcome)}\n\nConfirm to the user in 1-2 sentences.`,
                             null
                         );
@@ -763,7 +808,7 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
                         addMessage("bot", clean);
                     } catch (err) {
                         addPulse(`❌ ${err.message}`);
-                        const followup = await askClaude(
+                        const followup = await askFluxModel(
                             `[SIGNAL FAILED]\nAction: ${actionJson.action}\nError: ${err.message}\n\nExplain the failure briefly.`,
                             null
                         );
@@ -792,7 +837,8 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
     function togglePanel(force) {
         panelOpen = typeof force === "boolean" ? force : !panelOpen;
         if (elements.panel) {
-            elements.panel.classList.toggle("open", panelOpen);
+            elements.panel.classList.toggle("show", panelOpen);
+            elements.button?.classList.toggle("active", panelOpen);
         }
         if (panelOpen && elements.input) {
             setTimeout(() => elements.input.focus(), 100);
@@ -866,6 +912,11 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
                 else setStatus("Not signed in");
             });
         }
+        window.addEventListener("ees:userchange", () => {
+            const authUser = getAuth()?.currentUser;
+            if (!authUser) setStatus("Not signed in");
+            else setStatus(isAdmin() ? "Ready" : "Read-only (admin required)");
+        });
     }
 
     if (document.readyState === "loading") {
