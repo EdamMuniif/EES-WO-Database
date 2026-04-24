@@ -1,0 +1,53 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "ees_roles": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('ees_roles').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+        ".validate": "newData.hasChildren(['role', 'active']) && (newData.child('role').val() == 'admin' || newData.child('role').val() == 'viewer') && newData.child('active').isBoolean()"
+      }
+    },
+
+    "ees_wo": {
+      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
+      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+      "$woId": {
+        ".validate": "newData.hasChildren(['id', 'asset', 'priority', 'overallProgress', 'assignees', 'tasks']) && newData.child('id').isString() && newData.child('asset').isString() && (newData.child('priority').val() == 'Minor' || newData.child('priority').val() == 'Major' || newData.child('priority').val() == 'Urgent' || newData.child('priority').val() == 'Critical') && newData.child('overallProgress').isNumber() && newData.child('overallProgress').val() >= 0 && newData.child('overallProgress').val() <= 100"
+      }
+    },
+
+    "ees_leaves": {
+      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
+      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+      "$rc": {
+        ".validate": "!newData.exists() || (newData.hasChildren(['type']) && newData.child('type').isString())"
+      }
+    },
+
+    "ees_meta": {
+      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
+      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'"
+    },
+
+    "ees_presence": {
+      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
+      "$rc": {
+        ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && (root.child('ees_roles').child(auth.uid).child('rc').val() == $rc || root.child('ees_roles').child(auth.uid).child('role').val() == 'admin')",
+        ".validate": "newData.isNumber()"
+      }
+    },
+
+    "ees_audit": {
+      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'"
+    },
+
+    "ees_backups": {
+      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
+      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'"
+    }
+  }
+}
