@@ -706,9 +706,14 @@ function renderPaginationControls(paged) {
 // ── App State ─────────────────────────────────────────────────────
 let loggedIn=false, currentUser=null, loginErr="", view="dashboard";
 window.currentUser = currentUser;
+window.currentView = view;
 function publishCurrentUser() {
     window.currentUser = currentUser;
     window.dispatchEvent(new CustomEvent("ees:userchange", { detail: currentUser }));
+}
+function publishAppView() {
+    window.currentView = view;
+    window.dispatchEvent(new CustomEvent("ees:viewchange", { detail: { view } }));
 }
 let orders=[], workerLeaves={};
 let selectedWO=null, selectedWorker=null, leaveModalWorker=null;
@@ -718,7 +723,7 @@ const orderViewState = {
     ongoing: { filterAsset: "All", search: "", page: 1, pageSize: 50 },
     completed: { filterAsset: "All", search: "", page: 1, pageSize: 50 }
 };
-let isLightMode=false, isSidebarOpen=false, lastUpdate="Never";
+let isLightMode=false, isSidebarOpen=false, isReportsMenuOpen=false, lastUpdate="Never";
 let realtimeListeners = [];
 let presencePingTimer = null;
 let viewerPresence = { rc: "5794", name: "Ahmed Miushaan", online: false, lastSeen: 0 };
@@ -922,17 +927,30 @@ window.handleLogout = async function() {
     stopRealtimeSync();
     await endUserSession();
     await auth.signOut();
-    loggedIn = false; currentUser = null; publishCurrentUser(); orders = []; workerLeaves = {};
+    loggedIn = false; currentUser = null; view = "dashboard"; publishCurrentUser(); publishAppView(); orders = []; workerLeaves = {};
     renderApp();
 };
 
 // ── UI Handlers ───────────────────────────────────────────────────
 
 window.toggleTheme = () => { isLightMode=!isLightMode; document.documentElement[isLightMode?'setAttribute':'removeAttribute']('data-theme','light'); renderApp(); };
-window.toggleSidebar = () => { isSidebarOpen=!isSidebarOpen; renderApp(); };
+window.toggleSidebar = () => { isSidebarOpen=!isSidebarOpen; isReportsMenuOpen=false; renderApp(); };
+window.toggleReportsMenu = function(event) {
+    if (event) event.stopPropagation();
+    isReportsMenuOpen = !isReportsMenuOpen;
+    renderApp();
+};
+window.runReportAction = function(action) {
+    isReportsMenuOpen = false;
+    if (action === "excel") return exportExcel();
+    if (action === "quickPdf") return exportQuickPDF();
+    if (action === "fullPdf") return exportFullPDF();
+    if (action === "jsonText") return exportJsonText();
+    showToast("⚠️ Unknown export option", true);
+};
 window.setView = v => {
     if (v === "upload" && !requireAdmin("manage data imports")) return;
-    view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; renderApp();
+    view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; isReportsMenuOpen=false; renderApp(); publishAppView();
 };
 window.setFilter = f => {
     const state = getOrderViewState("orders");
@@ -1824,6 +1842,51 @@ window.exportFullPDF = function() {
 // Backward compatibility — old references still work
 window.exportDashboardPDF = window.exportFullPDF;
 
+// ─── JSON Text Export ────────────────────────────────────────────
+window.exportJsonText = function() {
+    if (!orders.length) {
+        showToast("No WO data to export.");
+        return;
+    }
+
+    try {
+        const payload = {
+            exportedAt: new Date().toISOString(),
+            exportedBy: {
+                name: currentUser?.name || "System",
+                rc: currentUser?.rc || "",
+                role: currentUser?.role || ""
+            },
+            lastImport: lastUpdate || "Never",
+            summary: {
+                totalWOs: orders.length,
+                activeWOs: orders.filter(o => Number(o.overallProgress || 0) < 100).length,
+                completedWOs: orders.filter(o => Number(o.overallProgress || 0) === 100).length,
+                urgentCriticalWOs: orders.filter(o => ["Urgent", "Critical"].includes(normalizePriority(o.priority)) && Number(o.overallProgress || 0) < 100).length,
+                ongoingWOs: orders.filter(o => Number(o.overallProgress || 0) < 100 && (o.tasks || []).some(t => t.status === "Ongoing")).length
+            },
+            workOrders: orders,
+            workers: WORKERS,
+            leaves: workerLeaves
+        };
+
+        const jsonText = JSON.stringify(payload, null, 2);
+        const blob = new Blob([jsonText], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `EES_WO_Database_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showToast("✅ JSON Text downloaded!");
+    } catch (err) {
+        console.error(err);
+        showToast("❌ JSON Text export failed: " + err.message, true);
+    }
+};
+
 // ── Excel Import ──────────────────────────────────────────────────
 
 window.processExcel = async function(file) {
@@ -1987,9 +2050,17 @@ function getSidebarHTML() {
             </div>
             <div class="nav-grp"><div class="nav-grp-lbl">Reports & Data</div>
                 ${!iv?`<div class="nav-item ${view==='upload'?'active':''}" onclick="setView('upload')"><span>⬆️</span> Manage Data</div>`:''}
-                <div class="nav-item" onclick="exportExcel()"><span>⬇️</span> Export Excel</div>
-                <div class="nav-item" onclick="exportQuickPDF()"><span>⚡</span> Quick PDF</div>
-                <div class="nav-item" onclick="exportFullPDF()"><span>📄</span> Full PDF</div>
+                <div class="reports-menu">
+                    <button class="nav-item reports-menu-btn" type="button" onclick="toggleReportsMenu(event)">
+                        <span>📦</span><span class="reports-menu-text">Exports</span><span class="reports-caret">▾</span>
+                    </button>
+                    <div class="reports-menu-panel ${isReportsMenuOpen ? 'show' : ''}">
+                        <button type="button" onclick="runReportAction('excel')"><span>⬇️</span> Export Excel</button>
+                        <button type="button" onclick="runReportAction('quickPdf')"><span>⚡</span> Quick PDF</button>
+                        <button type="button" onclick="runReportAction('fullPdf')"><span>📄</span> Full PDF</button>
+                        <button type="button" onclick="runReportAction('jsonText')"><span>{ }</span> JSON Text</button>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="sidebar-foot">
@@ -2201,6 +2272,7 @@ function renderApp() {
     }
 
     root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content">${contentHtml}</div>${detailHtml}</div></div></div>`;
+    publishAppView();
 }
 
 // ── Init: check if user already signed in ─────────────────────────
@@ -2208,16 +2280,16 @@ auth.onAuthStateChanged(async user => {
     if(user) {
         const profile = await loadUserProfile(user);
         if(profile) {
-            currentUser=profile; loggedIn=true; view="dashboard"; publishCurrentUser();
+            currentUser=profile; loggedIn=true; view="dashboard"; publishCurrentUser(); publishAppView();
             showLoad("Loading your data...");
             try { await dbLoadAll(); await startUserSession(); } catch(e) { console.error(e); }
             hideLoad(); renderApp();
             startRealtimeSync();        } else {
-            currentUser=null; loggedIn=false; publishCurrentUser();
+            currentUser=null; loggedIn=false; view="dashboard"; publishCurrentUser(); publishAppView();
             hideLoad(); renderApp();
         }
     } else {
-        currentUser=null; loggedIn=false; publishCurrentUser();
+        currentUser=null; loggedIn=false; view="dashboard"; publishCurrentUser(); publishAppView();
         hideLoad(); renderApp();
     }
 });
