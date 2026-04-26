@@ -487,7 +487,7 @@
     }
 }
 
-/* ── Reports dropdown ───────────────────────────────────────────── */
+/* ── Sidebar dropdown menus ─────────────────────────────────────── */
 .reports-menu {
     position: relative;
     margin-bottom: 4px;
@@ -545,3 +545,8 @@
     color: var(--text);
     outline: none;
 }
+.reports-menu-panel button.active {
+    background: rgba(10,132,255,0.12);
+    color: var(--blue);
+}
+

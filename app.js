@@ -723,7 +723,7 @@ const orderViewState = {
     ongoing: { filterAsset: "All", search: "", page: 1, pageSize: 50 },
     completed: { filterAsset: "All", search: "", page: 1, pageSize: 50 }
 };
-let isLightMode=false, isSidebarOpen=false, isReportsMenuOpen=false, lastUpdate="Never";
+let isLightMode=false, isSidebarOpen=false, isReportsMenuOpen=false, isWOViewsMenuOpen=false, lastUpdate="Never";
 let realtimeListeners = [];
 let presencePingTimer = null;
 let viewerPresence = { rc: "5794", name: "Ahmed Miushaan", online: false, lastSeen: 0 };
@@ -934,14 +934,22 @@ window.handleLogout = async function() {
 // ── UI Handlers ───────────────────────────────────────────────────
 
 window.toggleTheme = () => { isLightMode=!isLightMode; document.documentElement[isLightMode?'setAttribute':'removeAttribute']('data-theme','light'); renderApp(); };
-window.toggleSidebar = () => { isSidebarOpen=!isSidebarOpen; isReportsMenuOpen=false; renderApp(); };
+window.toggleSidebar = () => { isSidebarOpen=!isSidebarOpen; isReportsMenuOpen=false; isWOViewsMenuOpen=false; renderApp(); };
 window.toggleReportsMenu = function(event) {
     if (event) event.stopPropagation();
+    isWOViewsMenuOpen = false;
     isReportsMenuOpen = !isReportsMenuOpen;
+    renderApp();
+};
+window.toggleWOViewsMenu = function(event) {
+    if (event) event.stopPropagation();
+    isReportsMenuOpen = false;
+    isWOViewsMenuOpen = !isWOViewsMenuOpen;
     renderApp();
 };
 window.runReportAction = function(action) {
     isReportsMenuOpen = false;
+    isWOViewsMenuOpen = false;
     if (action === "excel") return exportExcel();
     if (action === "quickPdf") return exportQuickPDF();
     if (action === "fullPdf") return exportFullPDF();
@@ -950,7 +958,7 @@ window.runReportAction = function(action) {
 };
 window.setView = v => {
     if (v === "upload" && !requireAdmin("manage data imports")) return;
-    view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; isReportsMenuOpen=false; renderApp(); publishAppView();
+    view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; isReportsMenuOpen=false; isWOViewsMenuOpen=false; renderApp(); publishAppView();
 };
 window.setFilter = f => {
     const state = getOrderViewState("orders");
@@ -2040,10 +2048,17 @@ function getSidebarHTML() {
         <div class="sidebar-main">
             <div class="nav-grp"><div class="nav-grp-lbl">Main</div>
                 <div class="nav-item ${view==='dashboard'?'active':''}" onclick="setView('dashboard')"><span>📊</span> Dashboard</div>
-                <div class="nav-item ${view==='orders'?'active':''}" onclick="setView('orders')"><span>📋</span> Active Orders</div>
-                <div class="nav-item ${view==='urgent'?'active':''}" onclick="setView('urgent')"><span>🚨</span> Urgent & Critical</div>
-                <div class="nav-item ${view==='ongoing'?'active':''}" onclick="setView('ongoing')"><span>🟢</span> Ongoing WOs</div>
-                <div class="nav-item ${view==='completed'?'active':''}" onclick="setView('completed')"><span>✅</span> WO Completed</div>
+                <div class="reports-menu">
+                    <button class="nav-item reports-menu-btn ${['orders','urgent','ongoing','completed'].includes(view)?'active':''}" type="button" onclick="toggleWOViewsMenu(event)">
+                        <span>📋</span><span class="reports-menu-text">Work Orders</span><span class="reports-caret">▾</span>
+                    </button>
+                    <div class="reports-menu-panel ${isWOViewsMenuOpen ? 'show' : ''}">
+                        <button type="button" class="${view==='orders'?'active':''}" onclick="setView('orders')"><span>📋</span> Active Orders</button>
+                        <button type="button" class="${view==='urgent'?'active':''}" onclick="setView('urgent')"><span>🚨</span> Urgent & Critical</button>
+                        <button type="button" class="${view==='ongoing'?'active':''}" onclick="setView('ongoing')"><span>🟢</span> Ongoing WOs</button>
+                        <button type="button" class="${view==='completed'?'active':''}" onclick="setView('completed')"><span>✅</span> WO Completed</button>
+                    </div>
+                </div>
             </div>
             <div class="nav-grp"><div class="nav-grp-lbl">Team</div>
                 <div class="nav-item ${view==='workers'?'active':''}" onclick="setView('workers')"><span>👷</span> EES Team</div>
