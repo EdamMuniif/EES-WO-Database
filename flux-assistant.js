@@ -38,16 +38,19 @@
     //  CONFIG
     // ───────────────────────────────────────────────────────────────
 
-    const FLUX_VERSION = "2.1.0-gemini";
+    const FLUX_VERSION = "2.3.0-full-ops";
     const FLUX_MODEL = "gemini-2.5-flash";
     const FLUX_ENDPOINT = "/.netlify/functions/flux";
+    const FLUX_DEBUG = false; // Keep internal scanning/JSON/action pulses hidden from users.
     const UNDO_WINDOW_MS = 2500; // 2.5 seconds
 
     const DATA_PATHS = {
         workOrders: "ees_wo",
         audit: "ees_audit",
         presence: "ees_presence",
-        leaves: "ees_leaves"
+        leaves: "ees_leaves",
+        sessions: "ees_sessions",
+        attendance: "ees_attendance"
     };
 
     // Workers list — trimmed down (single source of truth is app.js WORKERS)
@@ -183,6 +186,96 @@
             .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     }
 
+
+    function formatFluxTime(ms) {
+        const n = Number(ms || 0);
+        if (!n) return "Not recorded";
+        try {
+            return new Date(n).toLocaleString("en-GB", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+            });
+        } catch {
+            return String(n);
+        }
+    }
+
+    async function snapshotSessions(limit = 25) {
+        const db = getDb();
+        if (!db) return [];
+
+        const snap = await db
+            .ref(DATA_PATHS.sessions)
+            .orderByChild("loginAt")
+            .limitToLast(limit)
+            .once("value");
+
+        const sessions = [];
+        snap.forEach(child => {
+            const value = child.val() || {};
+            sessions.push({
+                id: child.key,
+                uid: value.uid || "",
+                rc: value.rc || "",
+                name: value.name || "",
+                email: value.email || "",
+                role: value.role || "",
+                status: value.status || "unknown",
+                loginAt: Number(value.loginAt || 0),
+                loginAtText: formatFluxTime(value.loginAt),
+                logoutAt: Number(value.logoutAt || 0),
+                logoutAtText: formatFluxTime(value.logoutAt),
+                lastSeenAt: Number(value.lastSeenAt || 0),
+                lastSeenAtText: formatFluxTime(value.lastSeenAt)
+            });
+        });
+
+        return sessions.sort((a, b) => Number(b.loginAt || 0) - Number(a.loginAt || 0));
+    }
+
+    async function snapshotAttendance() {
+        const db = getDb();
+        if (!db) return [];
+
+        const [attendanceSnap, leavesSnap, presenceSnap] = await Promise.all([
+            db.ref(DATA_PATHS.attendance).once("value"),
+            db.ref(DATA_PATHS.leaves).once("value"),
+            db.ref(DATA_PATHS.presence).once("value")
+        ]);
+
+        const attendance = attendanceSnap.val() || {};
+        const leaves = leavesSnap.val() || {};
+        const presence = presenceSnap.val() || {};
+        const now = Date.now();
+
+        return WORKERS.map(worker => {
+            const rc = String(worker.rc);
+            const ownAttendance = attendance[rc] || {};
+            const leave = leaves[rc] || null;
+            const lastSeen = Number(presence[rc] || 0);
+            const online = lastSeen > 0 && (now - lastSeen) < 300000;
+            const status = leave?.type && leave.type !== "None"
+                ? "On Leave"
+                : (ownAttendance.status || (online ? "On Duty" : "Off Duty"));
+
+            return {
+                rc,
+                name: worker.name,
+                status,
+                online,
+                lastSeenAt: lastSeen,
+                lastSeenAtText: formatFluxTime(lastSeen),
+                leaveType: leave?.type || "",
+                updatedAt: Number(ownAttendance.updatedAt || 0),
+                updatedAtText: formatFluxTime(ownAttendance.updatedAt),
+                updatedBy: ownAttendance.updatedBy?.name || ownAttendance.updatedBy || ""
+            };
+        });
+    }
+
     // ───────────────────────────────────────────────────────────────
     //  AUDIT LOG (uses app.js auditLog if present, else writes direct)
     // ───────────────────────────────────────────────────────────────
@@ -232,16 +325,75 @@
 
         SEARCH_WO: {
             description: "Find WOs matching a filter.",
-            params: { priority: "string?", progressBelow: "number?", assigneeRc: "string?" },
+            params: { priority: "string?", highPriority: "boolean?", progressBelow: "number?", assigneeRc: "string?" },
             isWrite: false,
-            execute: async ({ priority, progressBelow, assigneeRc }) => {
+            execute: async ({ priority, highPriority, progressBelow, assigneeRc }) => {
                 const all = await snapshotWOs(500);
                 return all.filter(wo => {
+                    if (highPriority && !["Urgent", "Critical"].includes(wo.priority)) return false;
                     if (priority && wo.priority !== priority) return false;
                     if (progressBelow !== undefined && wo.progress >= progressBelow) return false;
                     if (assigneeRc && !wo.assignees.includes(assigneeRc)) return false;
                     return true;
                 });
+            }
+        },
+
+        QUERY_SESSIONS: {
+            description: "Read login/session history.",
+            params: { rc: "string?", name: "string?", limit: "number?" },
+            isWrite: false,
+            execute: async ({ rc, name, limit }) => {
+                const sessions = await snapshotSessions(Math.min(Number(limit || 25), 100));
+                const needle = String(name || "").trim().toLowerCase();
+                return sessions.filter(session => {
+                    if (rc && String(session.rc) !== String(rc)) return false;
+                    if (needle && !String(session.name || "").toLowerCase().includes(needle)) return false;
+                    return true;
+                });
+            }
+        },
+
+        QUERY_ATTENDANCE: {
+            description: "Read personnel attendance/on-duty/leave status.",
+            params: { rc: "string?", status: "string?" },
+            isWrite: false,
+            execute: async ({ rc, status }) => {
+                const attendance = await snapshotAttendance();
+                return attendance.filter(row => {
+                    if (rc && String(row.rc) !== String(rc)) return false;
+                    if (status && String(row.status).toLowerCase() !== String(status).toLowerCase()) return false;
+                    return true;
+                });
+            }
+        },
+
+        UPDATE_ATTENDANCE: {
+            description: "Update a worker attendance status.",
+            params: { rc: "string", status: "On Duty|Off Duty|On Leave|Absent" },
+            isWrite: true,
+            validate: ({ rc, status }) =>
+                workerByRc.has(String(rc)) && ["On Duty", "Off Duty", "On Leave", "Absent"].includes(status),
+            execute: async ({ rc, status }) => {
+                const db = getDb();
+                const key = safeFirebaseKey(rc);
+                const ref = db.ref(`${DATA_PATHS.attendance}/${key}`);
+                const prevSnap = await ref.once("value");
+                const previous = prevSnap.exists() ? prevSnap.val() : null;
+                await ref.update({
+                    rc: String(rc),
+                    name: workerByRc.get(String(rc)) || String(rc),
+                    status,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP,
+                    updatedBy: {
+                        uid: getAuth()?.currentUser?.uid || "",
+                        rc: window.currentUser?.rc || "",
+                        name: window.currentUser?.name || "",
+                        email: getAuth()?.currentUser?.email || ""
+                    },
+                    source: "flux"
+                });
+                return { updated: true, previous };
             }
         },
 
@@ -424,7 +576,7 @@
         if (spec.isWrite && outcome && outcome.previous) {
             lastActionSnapshot = {
                 action: json.action,
-                id: json.id,
+                id: json.id || json.rc,
                 taskIndex: json.taskIndex,
                 previous: outcome.previous,
                 timestamp: Date.now()
@@ -453,7 +605,7 @@
         const banner = document.createElement("div");
         banner.id = "flux-undo-banner";
         banner.innerHTML = `
-            <div class="flux-undo-msg">✨ Flux updated <b>${escapeHtml(json.id || "record")}</b></div>
+            <div class="flux-undo-msg">✨ Flux updated <b>${escapeHtml(json.id || json.rc || "record")}</b></div>
             <button class="flux-undo-btn" type="button">Undo</button>
             <div class="flux-undo-bar"><div class="flux-undo-bar-inner"></div></div>
         `;
@@ -500,6 +652,10 @@
                 }
             } else if (snap.action === "ADD_ASSIGNEE" || snap.action === "REMOVE_ASSIGNEE") {
                 await getWORef(snap.id, "assignees").set(snap.previous.assignees || []);
+            } else if (snap.action === "UPDATE_ATTENDANCE") {
+                const attendanceRef = db.ref(`${DATA_PATHS.attendance}/${safeFirebaseKey(snap.id)}`);
+                if (snap.previous) await attendanceRef.set(snap.previous);
+                else await attendanceRef.remove();
             }
 
             await logFluxAction("ACTION_UNDONE", { action: snap.action, id: snap.id });
@@ -590,6 +746,32 @@ ALLOWED ACTIONS (case-sensitive)
    \`\`\`json
    {"action": "ADD_TASK_REMARK", "id": "WO-2847-EEW", "taskIndex": 1, "remark": "Parts arrived, resuming work."}
    \`\`\`
+
+9. QUERY_SESSIONS — read login/logout/session history
+   \`\`\`json
+   {"action": "QUERY_SESSIONS", "name": "Ahmed", "limit": 10}
+   \`\`\`
+
+10. QUERY_ATTENDANCE — read personnel attendance/on-duty/leave status
+   \`\`\`json
+   {"action": "QUERY_ATTENDANCE", "status": "On Duty"}
+   \`\`\`
+
+11. UPDATE_ATTENDANCE — update personnel attendance status
+   \`\`\`json
+   {"action": "UPDATE_ATTENDANCE", "rc": "7485", "status": "On Duty"}
+   \`\`\`
+
+LOGIN AND ATTENDANCE RULES
+- If the user asks about login, logout, last online, session history, or who used the system, use QUERY_SESSIONS.
+- If the user asks who is on duty, absent, on leave, available, or off duty, use QUERY_ATTENDANCE.
+- If the database context does not contain enough session or attendance data, say exactly what signal is missing.
+
+ASSIGNMENT RULES
+- When the user says "assign Adam to W00038-EEW", convert Adam Muneef to RC 7485 and use ADD_ASSIGNEE.
+- When assigning employees, always write RC numbers, not names.
+- Never assign a worker if the name is ambiguous. Ask a short clarification question.
+- Treat "urgent WOs" as highPriority=true unless the user explicitly asks for priority exactly Urgent.
 
 WORKER ROSTER
 ${workersList}
@@ -729,6 +911,7 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
     }
 
     function addPulse(text) {
+        if (!FLUX_DEBUG) return;
         if (!elements.messages) return;
         const div = document.createElement("div");
         div.className = "flux-msg flux-msg-pulse";
@@ -764,16 +947,19 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
         addPulse("⚡ Scanning database...");
 
         try {
-            // Build context snapshot only on first message of a fresh session
-            let context = null;
-            if (conversationHistory.length === 0) {
-                const [wos, audits] = await Promise.all([
-                    snapshotWOs(60),
-                    snapshotAudit(5)
-                ]);
-                context = { workOrders: wos, recentAudit: audits };
-                addPulse(`⚡ Loaded ${wos.length} WOs + ${audits.length} audit entries`);
-            }
+            // Build a fresh compact operational context for every request.
+            const [wos, audits, sessions, attendance] = await Promise.all([
+                snapshotWOs(120),
+                snapshotAudit(10),
+                snapshotSessions(25),
+                snapshotAttendance()
+            ]);
+            const context = {
+                workOrders: wos,
+                recentAudit: audits,
+                recentSessions: sessions,
+                attendance
+            };
 
             const reply = await askFluxModel(userMsg, context);
 
@@ -871,7 +1057,7 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
                     <input class="flux-input" type="text" placeholder="Type command or question..." autocomplete="off">
                     <button class="flux-send" type="button">→</button>
                 </div>
-                <div class="flux-foot">Powered by Gemini · Actions logged · 2s undo · Admin only</div>
+                <div class="flux-foot">Powered by Gemini · Operational access · Actions logged</div>
             </section>
         `;
         document.body.appendChild(root);
@@ -900,7 +1086,7 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
             });
         });
 
-        addMessage("bot", "Flux online (Gemini). I can read and update WOs on your command. Every action is logged and undoable.");
+        addMessage("bot", "Flux online. I can read WOs, sessions, attendance, audit signals, and execute approved actions.");
     }
 
     function initWhenReady() {

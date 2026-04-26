@@ -222,6 +222,117 @@ async function auditLog(action, payload = {}) {
 
 window.auditLog = auditLog;
 
+
+// ── Day 23: Login/session + attendance records ─────────────────────
+let activeSessionRef = null;
+let activeSessionUid = "";
+
+function currentActorPayload() {
+    return {
+        uid: auth.currentUser?.uid || currentUser?.uid || "",
+        rc: currentUser?.rc || "",
+        name: currentUser?.name || "",
+        email: currentUser?.email || auth.currentUser?.email || ""
+    };
+}
+
+async function startUserSession() {
+    if (!auth.currentUser || !currentUser || !db) return;
+
+    const uid = auth.currentUser.uid;
+    const rc = safeFirebaseKey(currentUser.rc || "");
+    if (!uid || !rc) return;
+
+    // Prevent duplicate session rows if auth state and manual login both fire.
+    if (activeSessionRef && activeSessionUid === uid) return;
+
+    const sessionRef = db.ref("ees_sessions").push();
+    activeSessionRef = sessionRef;
+    activeSessionUid = uid;
+
+    const actor = currentActorPayload();
+    const sessionData = {
+        uid,
+        rc: currentUser.rc || "",
+        name: currentUser.name || "",
+        email: currentUser.email || auth.currentUser.email || "",
+        role: currentUser.role || "",
+        status: "online",
+        userAgent: navigator.userAgent || "",
+        loginAt: firebase.database.ServerValue.TIMESTAMP,
+        lastSeenAt: firebase.database.ServerValue.TIMESTAMP
+    };
+
+    await sessionRef.set(sessionData);
+
+    await sessionRef.onDisconnect().update({
+        status: "offline",
+        logoutAt: firebase.database.ServerValue.TIMESTAMP,
+        lastSeenAt: firebase.database.ServerValue.TIMESTAMP
+    });
+
+    const presenceRef = db.ref(`ees_presence/${rc}`);
+    await presenceRef.set(firebase.database.ServerValue.TIMESTAMP);
+    presenceRef.onDisconnect().set(0);
+
+    const attendanceRef = db.ref(`ees_attendance/${rc}`);
+    await attendanceRef.update({
+        rc: currentUser.rc || "",
+        name: currentUser.name || "",
+        status: workerLeaves[currentUser.rc]?.type ? "On Leave" : "On Duty",
+        source: "login",
+        updatedAt: firebase.database.ServerValue.TIMESTAMP,
+        updatedBy: actor
+    });
+
+    attendanceRef.onDisconnect().update({
+        status: "Off Duty",
+        source: "disconnect",
+        updatedAt: firebase.database.ServerValue.TIMESTAMP,
+        updatedBy: {
+            uid,
+            rc: currentUser.rc || "",
+            name: currentUser.name || "",
+            email: currentUser.email || auth.currentUser.email || ""
+        }
+    });
+
+    await auditLog("SESSION_LOGIN", { rc: currentUser.rc || "", name: currentUser.name || "" });
+}
+
+async function endUserSession() {
+    const actor = currentActorPayload();
+
+    try {
+        if (activeSessionRef) {
+            await activeSessionRef.update({
+                status: "offline",
+                logoutAt: firebase.database.ServerValue.TIMESTAMP,
+                lastSeenAt: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        if (currentUser?.rc) {
+            const rc = safeFirebaseKey(currentUser.rc);
+            await db.ref(`ees_presence/${rc}`).set(0);
+            await db.ref(`ees_attendance/${rc}`).update({
+                rc: currentUser.rc || "",
+                name: currentUser.name || "",
+                status: workerLeaves[currentUser.rc]?.type ? "On Leave" : "Off Duty",
+                source: "logout",
+                updatedAt: firebase.database.ServerValue.TIMESTAMP,
+                updatedBy: actor
+            });
+            await auditLog("SESSION_LOGOUT", { rc: currentUser.rc || "", name: currentUser.name || "" });
+        }
+    } catch (error) {
+        console.warn("Session logout update failed:", error);
+    } finally {
+        activeSessionRef = null;
+        activeSessionUid = "";
+    }
+}
+
 async function backupOperationalData(reason = "manual_backup") {
     assertAdmin("create database backups");
 
@@ -469,13 +580,13 @@ function getPresenceStatusHTML() {
 
 function updateOwnPresence() {
     if (!loggedIn || !currentUser?.rc) return Promise.resolve();
-    return db.ref(`ees_presence/${safeFirebaseKey(currentUser.rc)}`).set(Date.now());
+    return db.ref(`ees_presence/${safeFirebaseKey(currentUser.rc)}`).set(firebase.database.ServerValue.TIMESTAMP);
 }
 
 function setupOwnPresence() {
     if (!currentUser?.rc) return;
     const presenceRef = db.ref(`ees_presence/${safeFirebaseKey(currentUser.rc)}`);
-    presenceRef.set(Date.now());
+    presenceRef.set(firebase.database.ServerValue.TIMESTAMP);
     presenceRef.onDisconnect().set(0);
 }
 
@@ -788,6 +899,7 @@ window.handleLogin = async function() {
 
         showLoad("Loading data...");
         await dbLoadAll();
+        await startUserSession();
         hideLoad();
         renderApp();
         startRealtimeSync();
@@ -808,7 +920,7 @@ window.handleLogin = async function() {
 
 window.handleLogout = async function() {
     stopRealtimeSync();
-    if(currentUser) db.ref(`ees_presence/${safeFirebaseKey(currentUser.rc)}`).set(0);
+    await endUserSession();
     await auth.signOut();
     loggedIn = false; currentUser = null; publishCurrentUser(); orders = []; workerLeaves = {};
     renderApp();
@@ -2098,7 +2210,7 @@ auth.onAuthStateChanged(async user => {
         if(profile) {
             currentUser=profile; loggedIn=true; view="dashboard"; publishCurrentUser();
             showLoad("Loading your data...");
-            try { await dbLoadAll(); } catch(e) { console.error(e); }
+            try { await dbLoadAll(); await startUserSession(); } catch(e) { console.error(e); }
             hideLoad(); renderApp();
             startRealtimeSync();        } else {
             currentUser=null; loggedIn=false; publishCurrentUser();
