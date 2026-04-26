@@ -2255,35 +2255,20 @@ function renderApp() {
         const completedCount = orders.filter(o=>o.overallProgress===100).length;
         const urgentCriticalCount = activeOrders.filter(o=>o.priority==="Urgent"||o.priority==="Critical").length;
         const ongoingWOCount = activeOrders.filter(o=>o.tasks.some(t=>t.status==="Ongoing")).length;
-        const minorCount = activeOrders.filter(o=>o.priority==="Minor").length;
-        const majorCount = activeOrders.filter(o=>o.priority==="Major").length;
-        const urgentCount = activeOrders.filter(o=>o.priority==="Urgent").length;
-        const criticalCount = activeOrders.filter(o=>o.priority==="Critical").length;
+        const activeOnlyCount = Math.max(0, activeCount - ongoingWOCount);
 
         let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
         orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
 
         const woStatusChartHtml = buildDonutChartHTML({
             title: "WO Status Split",
-            subtitle: "Overall work order status",
+            subtitle: "Active / Completed / Ongoing WOs",
             total: orders.length,
             centerLabel: "Total WOs",
             segments: [
-                { label: "Active", value: activeCount, color: "#0a84ff" },
-                { label: "Completed", value: completedCount, color: "#32d74b" }
-            ]
-        });
-
-        const woPriorityChartHtml = buildDonutChartHTML({
-            title: "Active WO Priority",
-            subtitle: "Priority mix for active work orders",
-            total: activeCount,
-            centerLabel: "Active WOs",
-            segments: [
-                { label: "Critical", value: criticalCount, color: "#ff3b30" },
-                { label: "Urgent", value: urgentCount, color: "#ff9500" },
-                { label: "Major", value: majorCount, color: "#ffcc00" },
-                { label: "Minor", value: minorCount, color: "#8e8e93" }
+                { label: "Active", value: activeOnlyCount, color: "#0a84ff" },
+                { label: "Completed", value: completedCount, color: "#32d74b" },
+                { label: "Ongoing WOs", value: ongoingWOCount, color: "#ff9500" }
             ]
         });
 
@@ -2296,16 +2281,19 @@ function renderApp() {
             </div></div>
             <div>
                 <div class="sec-title">WO Data</div>
-                <div class="task-stats">
-                    <div class="ts-item"><div class="ts-val">${orders.length}</div><div class="ts-lbl">Total WOs</div></div>
-                    <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${activeCount}</div><div class="ts-lbl">Active</div></div>
-                    <div class="ts-item"><div class="ts-val" style="color:var(--green)">${completedCount}</div><div class="ts-lbl">Completed</div></div>
-                    <div class="ts-item"><div class="ts-val" style="color:var(--red)">${urgentCriticalCount}</div><div class="ts-lbl">Urgent/Critical</div></div>
-                    <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${ongoingWOCount}</div><div class="ts-lbl">Ongoing WOs</div></div>
-                </div>
-                <div class="dashboard-chart-grid">
-                    ${woStatusChartHtml}
-                    ${woPriorityChartHtml}
+                <div class="dashboard-wo-data-row">
+                    <div class="dashboard-wo-data-left">
+                        <div class="task-stats dashboard-wo-data-stats">
+                            <div class="ts-item"><div class="ts-val">${orders.length}</div><div class="ts-lbl">Total WOs</div></div>
+                            <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${activeCount}</div><div class="ts-lbl">Active</div></div>
+                            <div class="ts-item"><div class="ts-val" style="color:var(--green)">${completedCount}</div><div class="ts-lbl">Completed</div></div>
+                            <div class="ts-item"><div class="ts-val" style="color:var(--red)">${urgentCriticalCount}</div><div class="ts-lbl">Urgent/Critical</div></div>
+                            <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${ongoingWOCount}</div><div class="ts-lbl">Ongoing WOs</div></div>
+                        </div>
+                    </div>
+                    <div class="dashboard-wo-data-chart">
+                        ${woStatusChartHtml}
+                    </div>
                 </div>
             </div>
             <div><div class="sec-title">Tasks Status</div><div class="task-stats">
