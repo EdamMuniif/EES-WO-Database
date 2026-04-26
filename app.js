@@ -2273,18 +2273,16 @@ function renderApp() {
         });
 
         contentHtml=`
-        <div id="dashboard-content" class="dashboard-content-v2">
+        <div id="dashboard-content" class="dashboard-content-v3">
             <div>
                 <div class="sec-title">WO Data</div>
-                <div class="dashboard-wo-data-row dashboard-wo-data-row-compact">
-                    <div class="dashboard-wo-data-left">
-                        <div class="task-stats dashboard-wo-data-stats dashboard-wo-data-stats-compact">
-                            <div class="ts-item"><div class="ts-val">${orders.length}</div><div class="ts-lbl">Total WOs</div></div>
-                            <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${activeCount}</div><div class="ts-lbl">Active</div></div>
-                            <div class="ts-item"><div class="ts-val" style="color:var(--green)">${completedCount}</div><div class="ts-lbl">Completed</div></div>
-                            <div class="ts-item"><div class="ts-val" style="color:var(--red)">${urgentCriticalCount}</div><div class="ts-lbl">Urgent/Critical</div></div>
-                            <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${ongoingWOCount}</div><div class="ts-lbl">Ongoing WOs</div></div>
-                        </div>
+                <div class="dashboard-wo-data-row dashboard-wo-data-row-polished">
+                    <div class="dashboard-wo-metric-grid">
+                        <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${orders.length}</div><div class="dashboard-mini-label">Total WOs</div></div>
+                        <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${activeCount}</div><div class="dashboard-mini-label">Active</div></div>
+                        <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${completedCount}</div><div class="dashboard-mini-label">Completed</div></div>
+                        <div class="dashboard-mini-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><div class="dashboard-mini-value">${urgentCriticalCount}</div><div class="dashboard-mini-label">Urgent/Critical</div></div>
+                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
                     </div>
                     <div class="dashboard-wo-data-chart">
                         ${woStatusChartHtml}
@@ -2292,42 +2290,38 @@ function renderApp() {
                 </div>
             </div>
 
-            <div>
-                <div class="sec-title">Attention Required</div>
-                <div class="attention-grid">
-                    <div class="attention-card ${urgentCriticalCount > 0 ? 'danger' : 'ok'}">
-                        <div class="attention-value">${urgentCriticalCount}</div>
-                        <div class="attention-label">Urgent/Critical WOs</div>
+            <div class="dashboard-two-col">
+                <div>
+                    <div class="sec-title">Attention Required</div>
+                    <div class="dashboard-card-grid dashboard-card-grid-2">
+                        <div class="dashboard-mini-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><div class="dashboard-mini-value">${urgentCriticalCount}</div><div class="dashboard-mini-label">Urgent/Critical WOs</div></div>
+                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
+                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${tOh}</div><div class="dashboard-mini-label">Onhold Tasks</div></div>
+                        <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${tCn}</div><div class="dashboard-mini-label">Cancelled Tasks</div></div>
                     </div>
-                    <div class="attention-card ${ongoingWOCount > 0 ? 'warn' : 'ok'}">
-                        <div class="attention-value">${ongoingWOCount}</div>
-                        <div class="attention-label">Ongoing WOs</div>
-                    </div>
-                    <div class="attention-card ${tOh > 0 ? 'warn' : 'ok'}">
-                        <div class="attention-value">${tOh}</div>
-                        <div class="attention-label">Onhold Tasks</div>
-                    </div>
-                    <div class="attention-card ${tCn > 0 ? 'danger' : 'ok'}">
-                        <div class="attention-value">${tCn}</div>
-                        <div class="attention-label">Cancelled Tasks</div>
+                </div>
+
+                <div>
+                    <div class="sec-title">Tasks Status</div>
+                    <div class="dashboard-card-grid dashboard-card-grid-3 tasks-card-grid">
+                        <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${tT}</div><div class="dashboard-mini-label">Total</div></div>
+                        <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${tOn}</div><div class="dashboard-mini-label">Ongoing</div></div>
+                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${tOh}</div><div class="dashboard-mini-label">Onhold</div></div>
+                        <div class="dashboard-mini-card muted"><div class="dashboard-mini-value">${tP}</div><div class="dashboard-mini-label">Pending</div></div>
+                        <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${tC}</div><div class="dashboard-mini-label">Completed</div></div>
+                        <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${tCn}</div><div class="dashboard-mini-label">Cancelled</div></div>
                     </div>
                 </div>
             </div>
 
-            <div><div class="sec-title">Tasks Status</div><div class="task-stats">
-                <div class="ts-item"><div class="ts-val">${tT}</div><div class="ts-lbl">Total</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${tOn}</div><div class="ts-lbl">Ongoing</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${tOh}</div><div class="ts-lbl">Onhold</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--muted)">${tP}</div><div class="ts-lbl">Pending</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--green)">${tC}</div><div class="ts-lbl">Completed</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${tCn}</div><div class="ts-lbl">Cancelled</div></div>
-            </div></div>
-
-            <div><div class="sec-title">EES MANPOWER</div><div class="task-stats dashboard-manpower-stats">
-                <div class="ts-item"><div class="ts-val">${WORKERS.length}</div><div class="ts-lbl">Headcount</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${WORKERS.length-onLeave}</div><div class="ts-lbl">On Duty</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${onLeave}</div><div class="ts-lbl">On Leave</div></div>
-            </div></div>
+            <div>
+                <div class="sec-title">EES Manpower</div>
+                <div class="dashboard-card-grid dashboard-card-grid-3 manpower-compact-grid">
+                    <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${WORKERS.length}</div><div class="dashboard-mini-label">Headcount</div></div>
+                    <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${WORKERS.length-onLeave}</div><div class="dashboard-mini-label">On Duty</div></div>
+                    <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${onLeave}</div><div class="dashboard-mini-label">On Leave</div></div>
+                </div>
+            </div>
         </div>`;
     }
 

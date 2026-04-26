@@ -652,3 +652,148 @@
         width: 100%;
     }
 }
+
+/* ── Day 31 Dashboard polish ─────────────────────────────────── */
+.dashboard-content-v3 {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 12px;
+}
+.dashboard-wo-data-row-polished {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.85fr);
+    gap: 18px;
+    align-items: stretch;
+}
+.dashboard-wo-metric-grid,
+.dashboard-card-grid {
+    display: grid;
+    gap: 12px;
+}
+.dashboard-wo-metric-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: 100%;
+}
+.dashboard-card-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dashboard-card-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dashboard-mini-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--muted2);
+    border-radius: 12px;
+    padding: 14px 16px;
+    min-height: 82px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.01);
+}
+.dashboard-mini-card.neutral { border-left-color: var(--muted2); }
+.dashboard-mini-card.blue { border-left-color: var(--blue); }
+.dashboard-mini-card.green { border-left-color: var(--green); }
+.dashboard-mini-card.orange { border-left-color: var(--orange); }
+.dashboard-mini-card.danger { border-left-color: var(--red); }
+.dashboard-mini-card.muted { border-left-color: var(--muted); }
+.dashboard-mini-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 700;
+    color: var(--text);
+}
+.dashboard-mini-card.blue .dashboard-mini-value { color: var(--blue); }
+.dashboard-mini-card.green .dashboard-mini-value { color: var(--green); }
+.dashboard-mini-card.orange .dashboard-mini-value { color: var(--orange); }
+.dashboard-mini-card.danger .dashboard-mini-value { color: var(--red); }
+.dashboard-mini-card.muted .dashboard-mini-value { color: var(--muted); }
+.dashboard-mini-label {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    font-weight: 700;
+}
+.dashboard-two-col {
+    display: grid;
+    grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+    gap: 18px;
+    align-items: start;
+}
+.dashboard-content-v3 .sec-title {
+    margin-bottom: 8px;
+}
+.dashboard-content-v3 .dashboard-chart-card {
+    height: 100%;
+    min-height: 174px;
+    padding: 16px 18px;
+}
+.dashboard-content-v3 .dashboard-chart-body {
+    gap: 16px;
+}
+.dashboard-content-v3 .dashboard-donut {
+    width: 148px;
+    min-width: 148px;
+}
+.dashboard-content-v3 .dashboard-donut::after {
+    inset: 17px;
+}
+.dashboard-content-v3 .dashboard-donut-total {
+    font-size: 25px;
+}
+.dashboard-content-v3 .dashboard-legend-item {
+    padding: 8px 10px;
+}
+.manpower-compact-grid .dashboard-mini-card {
+    min-height: 70px;
+}
+
+@media (min-width: 1024px) and (max-height: 820px) {
+    .content { padding: 18px 24px; }
+    .dashboard-content-v3 { gap: 14px; }
+    .dashboard-mini-card { min-height: 72px; padding: 12px 14px; }
+    .dashboard-mini-value { font-size: 23px; }
+    .dashboard-mini-label { font-size: 10px; margin-top: 7px; }
+    .dashboard-content-v3 .dashboard-chart-card { min-height: 160px; padding: 14px 16px; }
+    .dashboard-content-v3 .dashboard-donut { width: 136px; min-width: 136px; }
+    .dashboard-content-v3 .dashboard-donut-total { font-size: 23px; }
+    .dashboard-chart-title { font-size: 17px; }
+    .dashboard-chart-subtitle { font-size: 11px; }
+    .sec-title { font-size: 16px; }
+}
+
+@media (max-width: 1100px) {
+    .dashboard-wo-data-row-polished,
+    .dashboard-two-col {
+        grid-template-columns: 1fr;
+    }
+    .dashboard-wo-metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .dashboard-wo-metric-grid .dashboard-mini-card:first-child {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-content-v3 { gap: 16px; }
+    .dashboard-card-grid-2,
+    .dashboard-card-grid-3,
+    .manpower-compact-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .tasks-card-grid .dashboard-mini-card:first-child,
+    .manpower-compact-grid .dashboard-mini-card:first-child {
+        grid-column: 1 / -1;
+    }
+    .dashboard-content-v3 .dashboard-chart-body {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .dashboard-content-v3 .dashboard-donut {
+        width: 150px;
+        min-width: 150px;
+        margin: 0 auto;
+    }
+}
