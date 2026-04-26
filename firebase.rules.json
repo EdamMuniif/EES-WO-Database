@@ -1,122 +1,163 @@
-{
-  "rules": {
-    ".read": false,
-    ".write": false,
-    "ees_roles": {
-      "$uid": {
-        ".read": "auth != null && (auth.uid == $uid || root.child('ees_roles').child(auth.uid).child('role').val() == 'admin')",
-        ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-        ".validate": "newData.hasChildren(['role', 'active']) && (newData.child('role').val() == 'admin' || newData.child('role').val() == 'viewer') && newData.child('active').isBoolean()"
-      }
-    },
-    "ees_wo": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
-      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      "$woId": {
-        ".validate": "newData.hasChildren(['id', 'asset', 'priority', 'overallProgress', 'assignees', 'tasks']) && newData.child('id').isString() && newData.child('asset').isString() && (newData.child('priority').val() == 'Minor' || newData.child('priority').val() == 'Major' || newData.child('priority').val() == 'Urgent' || newData.child('priority').val() == 'Critical') && newData.child('overallProgress').isNumber() && newData.child('overallProgress').val() >= 0 && newData.child('overallProgress').val() <= 100",
-        "id": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
-        },
-        "asset": {
-          ".validate": "newData.isString() && newData.val().length <= 200"
-        },
-        "date": {
-          ".validate": "!newData.exists() || newData.isString()"
-        },
-        "sr": {
-          ".validate": "!newData.exists() || newData.isString()"
-        },
-        "svo": {
-          ".validate": "!newData.exists() || newData.isString()"
-        },
-        "priority": {
-          ".validate": "newData.val() == 'Minor' || newData.val() == 'Major' || newData.val() == 'Urgent' || newData.val() == 'Critical'"
-        },
-        "overallProgress": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
-        },
-        "assignees": {
-          "$index": {
-            ".validate": "newData.isString()"
-          }
-        },
-        "tasks": {
-          ".validate": "newData.exists()",
-          "$taskIndex": {
-            ".validate": "newData.hasChildren(['taskNo', 'details', 'status', 'progress', 'remarks'])",
-            "taskNo": {
-              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
-            },
-            "details": {
-              ".validate": "newData.isString() && newData.val().length <= 3000"
-            },
-            "status": {
-              ".validate": "newData.isString() && (newData.val() == 'Pending' || newData.val() == 'Ongoing' || newData.val() == 'Onhold' || newData.val() == 'Completed' || newData.val() == 'Cancelled')"
-            },
-            "progress": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
-            },
-            "startDate": {
-              ".validate": "!newData.exists() || newData.isString()"
-            },
-            "completeDate": {
-              ".validate": "!newData.exists() || newData.isString()"
-            },
-            "remarks": {
-              ".validate": "newData.isString() && newData.val().length <= 3000"
-            },
-            "$other": {
-              ".validate": false
-            }
-          }
-        },
-        "$other": {
-          ".validate": false
-        }
-      }
-    },
-    "ees_leaves": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
-      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      "$rc": {
-        ".validate": "!newData.exists() || (newData.hasChildren(['type']) && newData.child('type').isString())"
-      }
-    },
-    "ees_meta": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
-      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'"
-    },
-    "ees_presence": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
-      "$rc": {
-        ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && (root.child('ees_roles').child(auth.uid).child('rc').val() == $rc || root.child('ees_roles').child(auth.uid).child('role').val() == 'admin')",
-        ".validate": "newData.isNumber()"
-      }
-    },
-    "ees_sessions": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      "$sessionId": {
-        ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && (root.child('ees_roles').child(auth.uid).child('role').val() == 'admin' || (!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && data.child('uid').val() == auth.uid))",
-        ".validate": "newData.hasChildren(['uid', 'name', 'loginAt', 'status']) && newData.child('uid').isString() && newData.child('name').isString() && newData.child('loginAt').isNumber() && (newData.child('status').val() == 'online' || newData.child('status').val() == 'offline') && (!newData.child('logoutAt').exists() || newData.child('logoutAt').isNumber()) && (!newData.child('lastSeenAt').exists() || newData.child('lastSeenAt').isNumber())"
-      }
-    },
-    "ees_attendance": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true",
-      "$rc": {
-        ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && (root.child('ees_roles').child(auth.uid).child('role').val() == 'admin' || root.child('ees_roles').child(auth.uid).child('rc').val() == $rc)",
-        ".validate": "newData.hasChildren(['rc', 'name', 'status', 'updatedAt']) && newData.child('rc').isString() && newData.child('name').isString() && (newData.child('status').val() == 'On Duty' || newData.child('status').val() == 'Off Duty' || newData.child('status').val() == 'On Leave' || newData.child('status').val() == 'Absent') && newData.child('updatedAt').isNumber()"
-      }
-    },
-    "ees_audit": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      "$auditId": {
-        ".validate": "newData.hasChildren(['action', 'createdAt']) && newData.child('action').isString() && newData.child('createdAt').isNumber()"
-      }
-    },
-    "ees_backups": {
-      ".read": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'",
-      ".write": "auth != null && root.child('ees_roles').child(auth.uid).child('active').val() == true && root.child('ees_roles').child(auth.uid).child('role').val() == 'admin'"
+/**
+ * Netlify Function: flux.js
+ * Server-side proxy to Google Gemini API.
+ *
+ * Why this exists:
+ *   - Hides the Gemini API key from the browser (prevents quota theft)
+ *   - Provides a stable interface so we can swap models later (Gemini ↔ Claude)
+ *     without changing the frontend.
+ *
+ * Deploy:
+ *   1. Place this file at:  netlify/functions/flux.js
+ *   2. In Netlify dashboard → Site settings → Environment variables:
+ *        GEMINI_API_KEY = AIza...
+ *   3. Redeploy the site.
+ *
+ * The client calls:  fetch("/.netlify/functions/flux", { method: "POST", body: {...} })
+ */
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+exports.handler = async function (event) {
+    const corsHeaders = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Content-Type": "application/json"
+    };
+
+    if (event.httpMethod === "OPTIONS") {
+        return { statusCode: 200, headers: corsHeaders, body: "" };
     }
-  }
-}
+
+    if (event.httpMethod !== "POST") {
+        return {
+            statusCode: 405,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: "Method not allowed. Use POST." })
+        };
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                error: "GEMINI_API_KEY not set in Netlify environment variables."
+            })
+        };
+    }
+
+    let body;
+    try {
+        body = JSON.parse(event.body || "{}");
+    } catch {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: "Invalid JSON in request body." })
+        };
+    }
+
+    const { system, messages, max_tokens } = body;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: "messages[] is required." })
+        };
+    }
+
+    // Convert Claude-style messages to Gemini "contents" format
+    //   Claude:  [{ role: "user"|"assistant", content: "..." }]
+    //   Gemini:  [{ role: "user"|"model", parts: [{ text: "..." }] }]
+    const contents = messages.map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: String(m.content || "") }]
+    }));
+
+    const geminiBody = {
+        contents,
+        generationConfig: {
+            temperature: 0.3,         // Deterministic for JSON actions
+            maxOutputTokens: max_tokens || 1024,
+            topP: 0.95
+        }
+    };
+
+    if (system && typeof system === "string" && system.trim()) {
+        geminiBody.systemInstruction = {
+            role: "system",
+            parts: [{ text: system }]
+        };
+    }
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-goog-api-key": apiKey
+            },
+            body: JSON.stringify(geminiBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return {
+                statusCode: response.status,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    error: data.error?.message || "Gemini API error",
+                    details: data
+                })
+            };
+        }
+
+        let text = "";
+        try {
+            text = data?.candidates?.[0]?.content?.parts
+                ?.map(p => p.text)
+                .filter(Boolean)
+                .join("") || "";
+        } catch {
+            text = "";
+        }
+
+        if (!text) {
+            return {
+                statusCode: 502,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    error: "Gemini returned no text",
+                    stop_reason: data?.candidates?.[0]?.finishReason || "unknown",
+                    details: data
+                })
+            };
+        }
+
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                text,
+                usage: data.usageMetadata || null,
+                stop_reason: data?.candidates?.[0]?.finishReason || null
+            })
+        };
+    } catch (err) {
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                error: "Proxy failed to reach Gemini API",
+                details: err.message
+            })
+        };
+    }
+};

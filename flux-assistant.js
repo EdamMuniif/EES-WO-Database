@@ -38,7 +38,7 @@
     //  CONFIG
     // ───────────────────────────────────────────────────────────────
 
-    const FLUX_VERSION = "2.3.0-full-ops";
+    const FLUX_VERSION = "2.4.0-dashboard-only";
     const FLUX_MODEL = "gemini-2.5-flash";
     const FLUX_ENDPOINT = "/.netlify/functions/flux";
     const FLUX_DEBUG = false; // Keep internal scanning/JSON/action pulses hidden from users.
@@ -1017,10 +1017,45 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
     }
 
     // ───────────────────────────────────────────────────────────────
+    //  DASHBOARD-ONLY VISIBILITY
+    //  Flux is available only on the Dashboard page.
+    // ───────────────────────────────────────────────────────────────
+
+    function getVisibleAppView() {
+        const explicit = String(window.currentView || "").trim().toLowerCase();
+        if (explicit) return explicit;
+
+        const title = document.querySelector(".page-title")?.textContent?.trim().toLowerCase() || "";
+        if (title === "dashboard") return "dashboard";
+        return title || "login";
+    }
+
+    function shouldShowFlux() {
+        const appVisible = Boolean(document.querySelector(".app"));
+        return appVisible && getVisibleAppView() === "dashboard";
+    }
+
+    function syncFluxVisibility() {
+        if (!elements.root) return;
+        const visible = shouldShowFlux();
+        elements.root.classList.toggle("flux-hidden", !visible);
+        elements.root.setAttribute("aria-hidden", visible ? "false" : "true");
+        if (!visible && panelOpen) togglePanel(false);
+    }
+
+    // ───────────────────────────────────────────────────────────────
     //  UI CONSTRUCTION
     // ───────────────────────────────────────────────────────────────
 
     function togglePanel(force) {
+        if (!shouldShowFlux()) {
+            panelOpen = false;
+            if (elements.panel) elements.panel.classList.remove("show");
+            elements.button?.classList.remove("active");
+            syncFluxVisibility();
+            return;
+        }
+
         panelOpen = typeof force === "boolean" ? force : !panelOpen;
         if (elements.panel) {
             elements.panel.classList.toggle("show", panelOpen);
@@ -1087,6 +1122,7 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
         });
 
         addMessage("bot", "Flux online. I can read WOs, sessions, attendance, audit signals, and execute approved actions.");
+        syncFluxVisibility();
     }
 
     function initWhenReady() {
@@ -1102,7 +1138,14 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
             const authUser = getAuth()?.currentUser;
             if (!authUser) setStatus("Not signed in");
             else setStatus(isAdmin() ? "Ready" : "Read-only (admin required)");
+            syncFluxVisibility();
         });
+
+        window.addEventListener("ees:viewchange", syncFluxVisibility);
+
+        const observer = new MutationObserver(syncFluxVisibility);
+        observer.observe(document.getElementById("app-root") || document.body, { childList: true, subtree: true });
+        syncFluxVisibility();
     }
 
     if (document.readyState === "loading") {
@@ -1117,6 +1160,6 @@ Concise. Operational. No fluff. You are a tool, not a chatbot.`;
         processAgentAction,
         validateAction,
         ALLOWED_ACTIONS,
-        openPanel: () => togglePanel(true)
+        openPanel: () => { syncFluxVisibility(); togglePanel(true); }
     };
 })();
