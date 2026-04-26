@@ -2273,17 +2273,12 @@ function renderApp() {
         });
 
         contentHtml=`
-        <div id="dashboard-content" style="display:flex;flex-direction:column;gap:30px;padding-bottom:20px;">
-            <div><div class="sec-title">EES MANPOWER</div><div class="task-stats">
-                <div class="ts-item"><div class="ts-val">${WORKERS.length}</div><div class="ts-lbl">Headcount</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${WORKERS.length-onLeave}</div><div class="ts-lbl">On Duty</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${onLeave}</div><div class="ts-lbl">On Leave</div></div>
-            </div></div>
+        <div id="dashboard-content" class="dashboard-content-v2">
             <div>
                 <div class="sec-title">WO Data</div>
-                <div class="dashboard-wo-data-row">
+                <div class="dashboard-wo-data-row dashboard-wo-data-row-compact">
                     <div class="dashboard-wo-data-left">
-                        <div class="task-stats dashboard-wo-data-stats">
+                        <div class="task-stats dashboard-wo-data-stats dashboard-wo-data-stats-compact">
                             <div class="ts-item"><div class="ts-val">${orders.length}</div><div class="ts-lbl">Total WOs</div></div>
                             <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${activeCount}</div><div class="ts-lbl">Active</div></div>
                             <div class="ts-item"><div class="ts-val" style="color:var(--green)">${completedCount}</div><div class="ts-lbl">Completed</div></div>
@@ -2296,6 +2291,29 @@ function renderApp() {
                     </div>
                 </div>
             </div>
+
+            <div>
+                <div class="sec-title">Attention Required</div>
+                <div class="attention-grid">
+                    <div class="attention-card ${urgentCriticalCount > 0 ? 'danger' : 'ok'}">
+                        <div class="attention-value">${urgentCriticalCount}</div>
+                        <div class="attention-label">Urgent/Critical WOs</div>
+                    </div>
+                    <div class="attention-card ${ongoingWOCount > 0 ? 'warn' : 'ok'}">
+                        <div class="attention-value">${ongoingWOCount}</div>
+                        <div class="attention-label">Ongoing WOs</div>
+                    </div>
+                    <div class="attention-card ${tOh > 0 ? 'warn' : 'ok'}">
+                        <div class="attention-value">${tOh}</div>
+                        <div class="attention-label">Onhold Tasks</div>
+                    </div>
+                    <div class="attention-card ${tCn > 0 ? 'danger' : 'ok'}">
+                        <div class="attention-value">${tCn}</div>
+                        <div class="attention-label">Cancelled Tasks</div>
+                    </div>
+                </div>
+            </div>
+
             <div><div class="sec-title">Tasks Status</div><div class="task-stats">
                 <div class="ts-item"><div class="ts-val">${tT}</div><div class="ts-lbl">Total</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${tOn}</div><div class="ts-lbl">Ongoing</div></div>
@@ -2303,6 +2321,12 @@ function renderApp() {
                 <div class="ts-item"><div class="ts-val" style="color:var(--muted)">${tP}</div><div class="ts-lbl">Pending</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--green)">${tC}</div><div class="ts-lbl">Completed</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--red)">${tCn}</div><div class="ts-lbl">Cancelled</div></div>
+            </div></div>
+
+            <div><div class="sec-title">EES MANPOWER</div><div class="task-stats dashboard-manpower-stats">
+                <div class="ts-item"><div class="ts-val">${WORKERS.length}</div><div class="ts-lbl">Headcount</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${WORKERS.length-onLeave}</div><div class="ts-lbl">On Duty</div></div>
+                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${onLeave}</div><div class="ts-lbl">On Leave</div></div>
             </div></div>
         </div>`;
     }
