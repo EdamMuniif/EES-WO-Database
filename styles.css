@@ -550,3 +550,40 @@
     color: var(--blue);
 }
 
+
+/* ── Active Orders search controls ───────────────────────────── */
+.active-search-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 320px) minmax(220px, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 16px;
+}
+.control-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: block;
+    font-weight: 600;
+}
+.active-search-control {
+    height: 42px;
+    margin-bottom: 0 !important;
+}
+.active-search-btn {
+    height: 42px;
+    min-width: 90px;
+    justify-content: center;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+@media (max-width: 768px) {
+    .active-search-grid {
+        grid-template-columns: 1fr;
+    }
+    .active-search-btn {
+        width: 100%;
+    }
+}

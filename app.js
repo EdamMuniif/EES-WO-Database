@@ -599,19 +599,44 @@ function workOrderMatchesSearch(wo, query) {
     const q = normalizeSearchText(query);
     if (!q) return true;
 
-    const assigneeNames = (Array.isArray(wo.assignees) ? wo.assignees : [])
-        .map(rc => WORKERS.find(worker => worker.rc === rc)?.name || rc)
-        .join(" ");
-
-    const taskText = (Array.isArray(wo.tasks) ? wo.tasks : [])
-        .map(task => `${task.taskNo || ""} ${task.details || ""} ${task.status || ""} ${task.remarks || ""}`)
-        .join(" ");
-
+    // Active Orders search is intentionally limited to operational identifiers only:
+    // WO number, Asset, and SR No. This avoids confusing matches from assignees/tasks.
     const searchable = [
-        wo.id, wo.asset, wo.sr, wo.svo, wo.priority, wo.date, assigneeNames, taskText
+        wo.id,
+        wo.asset,
+        wo.sr
     ].join(" ").toLowerCase();
 
     return searchable.includes(q);
+}
+
+function getFilteredActiveOrders() {
+    const viewConfig = getWorkOrderViewConfig("orders");
+    const state = getOrderViewState("orders");
+    const base = viewConfig.list;
+
+    return base
+        .filter(order => state.filterAsset === "All" || order.asset === state.filterAsset)
+        .filter(order => workOrderMatchesSearch(order, state.search));
+}
+
+function renderWorkOrderResultsHTML(filtered, viewConfig, isCompleted, isActiveOrdersView) {
+    const cardsHtml = filtered.map(order => {
+        const isOngoing = order.tasks.some(task => task.status === "Ongoing");
+
+        return renderWOCardHTML(order, {
+            isCompleted,
+            extraClass: isOngoing && !isCompleted ? "ongoing-glow" : "",
+            borderStyle: (!isOngoing || isCompleted) ? `border-left-color:${getPriorityColor(order.priority)}` : ""
+        });
+    }).join("");
+
+    return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:var(--muted);font-size:12px;font-weight:600;">
+            <span>${filtered.length} ${isActiveOrdersView ? "matching " : ""}${viewConfig.matchLabel} work orders</span>
+        </div>
+        <div class="wo-list">${filtered.length===0?`<div style="text-align:center;color:var(--muted);padding:40px;">No ${viewConfig.emptyLabel} work orders${isActiveOrdersView ? " match WO number, Asset, or SR No." : ""}</div>`:""}
+        ${cardsHtml}</div>`;
 }
 
 function getOrderViewState(value = view) {
@@ -966,12 +991,31 @@ window.setFilter = f => {
     resetOrderPaging("orders");
     renderApp();
 };
+window.refreshActiveOrderResults = () => {
+    const wrap = document.getElementById("wo-results-wrap");
+    if (!wrap || view !== "orders") {
+        renderApp();
+        return;
+    }
+
+    const viewConfig = getWorkOrderViewConfig("orders");
+    const filtered = getFilteredActiveOrders();
+    wrap.innerHTML = renderWorkOrderResultsHTML(filtered, viewConfig, false, true);
+};
+
+window.handleActiveOrderSearchInput = input => {
+    const state = getOrderViewState("orders");
+    state.search = String(input?.value || "");
+    resetOrderPaging("orders");
+    refreshActiveOrderResults();
+};
+
 window.applyOrderSearch = () => {
     const state = getOrderViewState("orders");
     const searchInput = document.getElementById("active-order-search");
     state.search = String(searchInput ? searchInput.value : state.search || "");
     resetOrderPaging("orders");
-    renderApp();
+    refreshActiveOrderResults();
 };
 
 window.setOrderSearch = q => {
@@ -2179,29 +2223,16 @@ function renderApp() {
             ? filteredByAsset.filter(o => workOrderMatchesSearch(o, state.search))
             : filteredByAsset;
         const controlsHtml = isActiveOrdersView ? `
-        <div style="display:grid;grid-template-columns:minmax(200px,320px) minmax(220px,1fr) auto;gap:12px;align-items:end;margin-bottom:16px;">
-            <div><label style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;display:block;font-weight:600;">Filter by Asset</label>
-            <select class="filter-dropdown" style="margin-bottom:0;" onchange="setFilter(this.value)"><option value="All" ${state.filterAsset==="All"?"selected":""}>All Assets</option>${assets.map(a=>`<option value="${attr(a)}" ${state.filterAsset===a?"selected":""}>${html(a)}</option>`).join('')}</select></div>
-            <div><label style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;display:block;font-weight:600;">Search</label>
-            <input id="active-order-search" class="input" type="search" value="${attr(state.search)}" placeholder="Search WO, asset, SR, SVO, assignee, task..." onkeydown="if(event.key==='Enter')applyOrderSearch()"></div>
-            <div><button class="btn btn-primary" style="height:48px;" onclick="applyOrderSearch()">Search</button></div>
+        <div class="active-search-grid">
+            <div><label class="control-label">Filter by Asset</label>
+            <select class="filter-dropdown active-search-control" onchange="setFilter(this.value)"><option value="All" ${state.filterAsset==="All"?"selected":""}>All Assets</option>${assets.map(a=>`<option value="${attr(a)}" ${state.filterAsset===a?"selected":""}>${html(a)}</option>`).join('')}</select></div>
+            <div><label class="control-label">Search</label>
+            <input id="active-order-search" class="input active-search-control" type="search" value="${attr(state.search)}" placeholder="Search WO number, Asset, SR No." oninput="handleActiveOrderSearchInput(this)" onkeydown="if(event.key==='Enter')applyOrderSearch()"></div>
+            <div><button class="btn btn-primary active-search-btn" onclick="applyOrderSearch()">Search</button></div>
         </div>` : "";
-        const cardsHtml = filtered.map(o => {
-            const on = o.tasks.some(t => t.status === "Ongoing");
-            return renderWOCardHTML(o, {
-                isCompleted: isc,
-                extraClass: on && !isc ? "ongoing-glow" : "",
-                borderStyle: (!on || isc) ? `border-left-color:${getPriorityColor(o.priority)}` : ""
-            });
-        }).join('');
         contentHtml = `
         ${controlsHtml}
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:var(--muted);font-size:12px;font-weight:600;">
-            <span>${filtered.length} ${isActiveOrdersView ? "matching " : ""}${viewConfig.matchLabel} work orders</span>
-            ${isActiveOrdersView && state.search ? `<button class="btn btn-ghost" onclick="setOrderSearch('')">Clear Search</button>` : ''}
-        </div>
-        <div class="wo-list">${filtered.length===0?`<div style="text-align:center;color:var(--muted);padding:40px;">No ${viewConfig.emptyLabel} work orders${isActiveOrdersView ? " match your filters" : ""}.</div>`:''}
-        ${cardsHtml}</div>`;
+        <div id="wo-results-wrap">${renderWorkOrderResultsHTML(filtered, viewConfig, isc, isActiveOrdersView)}</div>`;
     }
 
     // ── Workers ──
