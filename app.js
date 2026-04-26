@@ -137,6 +137,81 @@ function safeFirebaseKey(value) {
         .slice(0, 120);
 }
 
+
+function formatPct(part, total) {
+    if (!Number(total)) return "0%";
+    return `${Math.round((Number(part) / Number(total)) * 100)}%`;
+}
+
+function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "Total", segments = [] }) {
+    const cleanSegments = segments
+        .map(seg => ({
+            label: String(seg.label || "").trim(),
+            value: Math.max(0, Number(seg.value) || 0),
+            color: seg.color || "#8e8e93"
+        }))
+        .filter(seg => seg.value > 0);
+
+    const safeTotal = Math.max(0, Number(total) || 0);
+
+    if (!safeTotal || !cleanSegments.length) {
+        return `
+        <div class="dashboard-chart-card">
+            <div class="dashboard-chart-head">
+                <div>
+                    <div class="dashboard-chart-title">${html(title)}</div>
+                    ${subtitle ? `<div class="dashboard-chart-subtitle">${html(subtitle)}</div>` : ''}
+                </div>
+            </div>
+            <div class="dashboard-chart-empty">No data available yet.</div>
+        </div>`;
+    }
+
+    let cursor = 0;
+    const gradientStops = [];
+    cleanSegments.forEach(seg => {
+        const pct = (seg.value / safeTotal) * 100;
+        const end = cursor + pct;
+        gradientStops.push(`${seg.color} ${cursor.toFixed(2)}% ${end.toFixed(2)}%`);
+        cursor = end;
+    });
+    if (cursor < 100) {
+        gradientStops.push(`rgba(255,255,255,0.08) ${cursor.toFixed(2)}% 100%`);
+    }
+
+    return `
+    <div class="dashboard-chart-card">
+        <div class="dashboard-chart-head">
+            <div>
+                <div class="dashboard-chart-title">${html(title)}</div>
+                ${subtitle ? `<div class="dashboard-chart-subtitle">${html(subtitle)}</div>` : ''}
+            </div>
+        </div>
+        <div class="dashboard-chart-body">
+            <div class="dashboard-donut" style="--donut-fill: conic-gradient(${gradientStops.join(', ')});">
+                <div class="dashboard-donut-center">
+                    <div class="dashboard-donut-total">${html(String(safeTotal))}</div>
+                    <div class="dashboard-donut-label">${html(centerLabel)}</div>
+                </div>
+            </div>
+            <div class="dashboard-chart-legend">
+                ${cleanSegments.map(seg => `
+                    <div class="dashboard-legend-item">
+                        <div class="dashboard-legend-main">
+                            <span class="dashboard-legend-dot" style="background:${seg.color}"></span>
+                            <span class="dashboard-legend-name">${html(seg.label)}</span>
+                        </div>
+                        <div class="dashboard-legend-values">
+                            <span>${html(String(seg.value))}</span>
+                            <span>${html(formatPct(seg.value, safeTotal))}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    </div>`;
+}
+
 // ── Day 3: Role / permission helpers ─────────────────────────────
 function normalizeRole(role) {
     return role === "admin" ? "admin" : "viewer";
@@ -2175,13 +2250,42 @@ function renderApp() {
         let onLeave=0;
         WORKERS.forEach(w=>{if(workerLeaves[w.rc]?.type&&workerLeaves[w.rc].type!=="None")onLeave++;});
 
-        const activeCount = orders.filter(o=>o.overallProgress<100).length;
+        const activeOrders = orders.filter(o => o.overallProgress < 100);
+        const activeCount = activeOrders.length;
         const completedCount = orders.filter(o=>o.overallProgress===100).length;
-        const urgentCriticalCount = orders.filter(o=>(o.priority==="Urgent"||o.priority==="Critical")&&o.overallProgress<100).length;
-        const ongoingWOCount = orders.filter(o=>o.tasks.some(t=>t.status==="Ongoing")&&o.overallProgress<100).length;
+        const urgentCriticalCount = activeOrders.filter(o=>o.priority==="Urgent"||o.priority==="Critical").length;
+        const ongoingWOCount = activeOrders.filter(o=>o.tasks.some(t=>t.status==="Ongoing")).length;
+        const minorCount = activeOrders.filter(o=>o.priority==="Minor").length;
+        const majorCount = activeOrders.filter(o=>o.priority==="Major").length;
+        const urgentCount = activeOrders.filter(o=>o.priority==="Urgent").length;
+        const criticalCount = activeOrders.filter(o=>o.priority==="Critical").length;
 
         let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
         orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
+
+        const woStatusChartHtml = buildDonutChartHTML({
+            title: "WO Status Split",
+            subtitle: "Overall work order status",
+            total: orders.length,
+            centerLabel: "Total WOs",
+            segments: [
+                { label: "Active", value: activeCount, color: "#0a84ff" },
+                { label: "Completed", value: completedCount, color: "#32d74b" }
+            ]
+        });
+
+        const woPriorityChartHtml = buildDonutChartHTML({
+            title: "Active WO Priority",
+            subtitle: "Priority mix for active work orders",
+            total: activeCount,
+            centerLabel: "Active WOs",
+            segments: [
+                { label: "Critical", value: criticalCount, color: "#ff3b30" },
+                { label: "Urgent", value: urgentCount, color: "#ff9500" },
+                { label: "Major", value: majorCount, color: "#ffcc00" },
+                { label: "Minor", value: minorCount, color: "#8e8e93" }
+            ]
+        });
 
         contentHtml=`
         <div id="dashboard-content" style="display:flex;flex-direction:column;gap:30px;padding-bottom:20px;">
@@ -2190,13 +2294,20 @@ function renderApp() {
                 <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${WORKERS.length-onLeave}</div><div class="ts-lbl">On Duty</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--red)">${onLeave}</div><div class="ts-lbl">On Leave</div></div>
             </div></div>
-            <div><div class="sec-title">WO Data</div><div class="task-stats">
-                <div class="ts-item"><div class="ts-val">${orders.length}</div><div class="ts-lbl">Total WOs</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${activeCount}</div><div class="ts-lbl">Active</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--green)">${completedCount}</div><div class="ts-lbl">Completed</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--red)">${urgentCriticalCount}</div><div class="ts-lbl">Urgent/Critical</div></div>
-                <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${ongoingWOCount}</div><div class="ts-lbl">Ongoing WOs</div></div>
-            </div></div>
+            <div>
+                <div class="sec-title">WO Data</div>
+                <div class="task-stats">
+                    <div class="ts-item"><div class="ts-val">${orders.length}</div><div class="ts-lbl">Total WOs</div></div>
+                    <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${activeCount}</div><div class="ts-lbl">Active</div></div>
+                    <div class="ts-item"><div class="ts-val" style="color:var(--green)">${completedCount}</div><div class="ts-lbl">Completed</div></div>
+                    <div class="ts-item"><div class="ts-val" style="color:var(--red)">${urgentCriticalCount}</div><div class="ts-lbl">Urgent/Critical</div></div>
+                    <div class="ts-item"><div class="ts-val" style="color:var(--orange)">${ongoingWOCount}</div><div class="ts-lbl">Ongoing WOs</div></div>
+                </div>
+                <div class="dashboard-chart-grid">
+                    ${woStatusChartHtml}
+                    ${woPriorityChartHtml}
+                </div>
+            </div>
             <div><div class="sec-title">Tasks Status</div><div class="task-stats">
                 <div class="ts-item"><div class="ts-val">${tT}</div><div class="ts-lbl">Total</div></div>
                 <div class="ts-item"><div class="ts-val" style="color:var(--blue)">${tOn}</div><div class="ts-lbl">Ongoing</div></div>
