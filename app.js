@@ -2277,11 +2277,10 @@ function renderApp() {
             <div>
                 <div class="sec-title">WO Data</div>
                 <div class="dashboard-wo-data-row dashboard-wo-data-row-polished">
-                    <div class="dashboard-wo-metric-grid">
+                    <div class="dashboard-wo-metric-grid wo-metric-grid-4">
                         <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${orders.length}</div><div class="dashboard-mini-label">Total WOs</div></div>
                         <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${activeCount}</div><div class="dashboard-mini-label">Active</div></div>
                         <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${completedCount}</div><div class="dashboard-mini-label">Completed</div></div>
-                        <div class="dashboard-mini-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><div class="dashboard-mini-value">${urgentCriticalCount}</div><div class="dashboard-mini-label">Urgent/Critical</div></div>
                         <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
                     </div>
                     <div class="dashboard-wo-data-chart">
