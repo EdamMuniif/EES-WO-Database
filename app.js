@@ -2260,6 +2260,8 @@ function renderApp() {
         let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
         orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
 
+        topbarExtra = `<div class="dashboard-top-status"><span class="dashboard-system-pill">System Online</span></div>`;
+
         const woStatusChartHtml = buildDonutChartHTML({
             title: "WO Status Split",
             subtitle: "Active / Completed / Ongoing WOs",
@@ -2321,6 +2323,7 @@ function renderApp() {
                     <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${onLeave}</div><div class="dashboard-mini-label">On Leave</div></div>
                 </div>
             </div>
+            <div class="dashboard-footer-line">⚡ EES WO Control Database · Electrical Operations Dashboard</div>
         </div>`;
     }
 
@@ -2433,7 +2436,7 @@ function renderApp() {
         }
     }
 
-    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content">${contentHtml}</div>${detailHtml}</div></div></div>`;
+    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar ${view==='dashboard'?'dashboard-topbar':''}"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content">${contentHtml}</div>${detailHtml}</div></div></div>`;
     publishAppView();
 }
 
