@@ -194,16 +194,12 @@ function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "T
                     <div class="dashboard-donut-label">${html(centerLabel)}</div>
                 </div>
             </div>
-            <div class="dashboard-chart-legend">
+            <div class="dashboard-chart-legend compact-status-legend">
                 ${cleanSegments.map(seg => `
-                    <div class="dashboard-legend-item">
+                    <div class="dashboard-legend-item dashboard-legend-item-inline">
                         <div class="dashboard-legend-main">
                             <span class="dashboard-legend-dot" style="background:${seg.color}"></span>
-                            <span class="dashboard-legend-name">${html(seg.label)}</span>
-                        </div>
-                        <div class="dashboard-legend-values">
-                            <span>${html(String(seg.value))}</span>
-                            <span>${html(formatPct(seg.value, safeTotal))}</span>
+                            <span class="dashboard-legend-inline"><strong>${html(String(seg.value))}</strong> ${html(seg.label)} - ${html(formatPct(seg.value, safeTotal))}</span>
                         </div>
                     </div>
                 `).join('')}
@@ -1033,7 +1029,11 @@ window.handleLogout = async function() {
 
 // ── UI Handlers ───────────────────────────────────────────────────
 
-window.toggleTheme = () => { isLightMode=!isLightMode; document.documentElement[isLightMode?'setAttribute':'removeAttribute']('data-theme','light'); renderApp(); };
+function applyThemeState(){
+    document.documentElement[isLightMode ? 'setAttribute' : 'removeAttribute']('data-theme','light');
+    document.body.classList.toggle('light', isLightMode);
+}
+window.toggleTheme = () => { isLightMode=!isLightMode; applyThemeState(); renderApp(); };
 window.toggleSidebar = () => { isSidebarOpen=!isSidebarOpen; isReportsMenuOpen=false; isWOViewsMenuOpen=false; renderApp(); };
 window.toggleReportsMenu = function(event) {
     if (event) event.stopPropagation();
@@ -2217,6 +2217,7 @@ function getSidebarHTML() {
 
 function renderApp() {
     const root = document.getElementById("app-root");
+    applyThemeState();
 
     if(!loggedIn) {
         root.innerHTML=`<div class="login-wrap"><div class="login-card">
@@ -2254,106 +2255,89 @@ function renderApp() {
         const activeOrders = orders.filter(o => o.overallProgress < 100);
         const activeCount = activeOrders.length;
         const completedCount = orders.filter(o=>o.overallProgress===100).length;
-        const urgentCriticalCount = activeOrders.filter(o=>o.priority==="Urgent"||o.priority==="Critical").length;
         const ongoingWOCount = activeOrders.filter(o=>o.tasks.some(t=>t.status==="Ongoing")).length;
         const activeOnlyCount = Math.max(0, activeCount - ongoingWOCount);
 
         let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
         orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
 
-        topbarExtra = `<div class="dashboard-top-actions">
-            <span class="dashboard-system-pill">System Online</span>
-            <span class="dashboard-action-chip" title="Notifications">🔔<b>3</b></span>
-            <span class="dashboard-action-chip" title="Last sync">⏱ ${html(new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))}</span>
-            <span class="dashboard-user-chip"><span>${html(ini(currentUser.name))}</span><strong>${html(currentUser.name || 'Admin User')}</strong></span>
-        </div>`;
+        const nowTime = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        const todayDate = new Date().toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'});
+        const pct = (value, total) => total ? Math.round((Number(value || 0) / Number(total || 0)) * 100) : 0;
+
+        topbarExtra = ``;
 
         const woStatusChartHtml = buildDonutChartHTML({
             title: "WO Status Split",
-            subtitle: "Active / Completed / Ongoing WOs",
+            subtitle: "Active / Completed / Ongoing",
             total: orders.length,
             centerLabel: "Total WOs",
             segments: [
                 { label: "Active", value: activeOnlyCount, color: "#0a84ff" },
                 { label: "Completed", value: completedCount, color: "#32d74b" },
-                { label: "Ongoing WOs", value: ongoingWOCount, color: "#ff9500" }
+                { label: "Ongoing", value: ongoingWOCount, color: "#ff9f0a" }
             ]
         });
 
-        const pct = (value, total) => total ? Math.round((Number(value || 0) / Number(total || 0)) * 100) : 0;
+        const taskRowsHtml = [
+            ['Ongoing', tOn, pct(tOn,tT), 'cyan'],
+            ['On Hold', tOh, pct(tOh,tT), 'amber'],
+            ['Pending', tP, pct(tP,tT), 'muted'],
+            ['Completed', tC, pct(tC,tT), 'green'],
+            ['Cancelled', tCn, pct(tCn,tT), 'red']
+        ].map(([label,value,percent,color])=>`
+            <div class="ed-task-row ${color}">
+                <div class="ed-task-meta"><span>${html(label)}</span><strong>${html(String(value))}</strong></div>
+                <div class="ed-task-track"><i style="width:${Math.max(10, Number(percent))}%"></i></div>
+                <small>${html(String(percent))}%</small>
+            </div>`).join('');
+
         const recentOrders = orders.slice()
             .sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')))
-            .slice(0,4);
-        const recentHtml = recentOrders.length ? recentOrders.map(o => `
-            <div class="live-item">
-                <span class="live-dot" style="background:${getPriorityColor(o.priority)}"></span>
-                <div><strong>${html(o.id)}</strong><small>${html(o.asset)} · ${html(clampNumber(o.overallProgress || 0,0,100))}% progress</small></div>
+            .slice(0,3);
+        const liveUpdatesHtml = recentOrders.length ? recentOrders.map(o => `
+            <div class="ed-live-item">
+                <span class="ed-live-dot" style="background:${getPriorityColor(o.priority)}"></span>
+                <div class="ed-live-copy">
+                    <strong>${html(o.id)}</strong>
+                    <small>${html(o.asset)} · ${html(clampNumber(o.overallProgress || 0,0,100))}% progress</small>
+                </div>
                 <em>${html(formatDateNice(o.date))}</em>
-            </div>`).join('') : `<div class="live-empty">No work-order signal available.</div>`;
+            </div>`).join('') : `<div class="ed-live-empty">No recent work orders found.</div>`;
 
         contentHtml=`
-        <div id="dashboard-content" class="premium-dashboard">
-            <section class="premium-hero">
-                <div>
-                    <h2>Dashboard</h2>
-                    <p>Overview of work orders and electrical operations</p>
-                </div>
-                <div class="hero-search"><span>⌕</span><input type="text" placeholder="Search work orders, tasks, assets..." onkeydown="if(event.key==='Enter'){setView('orders');}"></div>
-            </section>
+        <div id="dashboard-content" class="electrical-dashboard compact-dashboard-clean">
+            <div class="ed-shell no-inner-header no-inner-footer">
+                <section class="ed-kpi-grid">
+                    <div class="ed-kpi-card total"><div class="ed-kpi-icon">📋</div><div><label>Total WOs</label><strong>${orders.length}</strong><small>All work orders</small></div></div>
+                    <div class="ed-kpi-card active"><div class="ed-kpi-icon">⚙</div><div><label>Active</label><strong>${activeCount}</strong><small>In progress</small></div></div>
+                    <div class="ed-kpi-card completed"><div class="ed-kpi-icon">✓</div><div><label>Completed</label><strong>${completedCount}</strong><small>Finished jobs</small></div></div>
+                    <div class="ed-kpi-card ongoing"><div class="ed-kpi-icon">↻</div><div><label>Ongoing</label><strong>${ongoingWOCount}</strong><small>Long-running WOs</small></div></div>
+                </section>
 
-            <section class="premium-kpi-row">
-                <div class="premium-kpi kpi-total"><span class="kpi-icon">▣</span><div><label>Total WOs</label><strong>${orders.length}</strong><small>All time work orders</small></div><i class="mini-spark blue"></i></div>
-                <div class="premium-kpi kpi-active"><span class="kpi-icon">∿</span><div><label>Active</label><strong>${activeCount}</strong><small>Work orders in progress</small></div><i class="mini-spark cyan"></i></div>
-                <div class="premium-kpi kpi-completed"><span class="kpi-icon">✓</span><div><label>Completed</label><strong>${completedCount}</strong><small>Successfully completed</small></div><i class="mini-spark green"></i></div>
-                <div class="premium-kpi kpi-ongoing"><span class="kpi-icon">↻</span><div><label>Ongoing WOs</label><strong>${ongoingWOCount}</strong><small>Long-running work orders</small></div><i class="mini-spark amber"></i></div>
-            </section>
+                <section class="ed-main-grid fill-center-grid">
+                    <div class="ed-card ed-status-card">${woStatusChartHtml}</div>
 
-            <section class="premium-grid-main">
-                <div class="premium-panel wo-split-panel">${woStatusChartHtml}</div>
-                <div class="premium-panel attention-panel">
-                    <div class="premium-panel-head"><h3>Attention Required</h3><span>High-voltage focus</span></div>
-                    <div class="attention-card-row">
-                        <div class="attention-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><span>⚠</span><strong>${urgentCriticalCount}</strong><label>Urgent / Critical WOs</label><small>Require immediate attention</small></div>
-                        <div class="attention-card amber"><span>↻</span><strong>${ongoingWOCount}</strong><label>Ongoing WOs</label><small>Long-running work orders</small></div>
-                        <div class="attention-card purple"><span>Ⅱ</span><strong>${tOh}</strong><label>Onhold Tasks</label><small>Paused tasks awaiting action</small></div>
-                        <div class="attention-card danger"><span>×</span><strong>${tCn}</strong><label>Cancelled Tasks</label><small>Cancelled / closed work items</small></div>
+                    <div class="ed-card ed-tasks-card">
+                        <div class="ed-card-head"><h3>Tasks Status</h3><span>${tT} total tasks</span></div>
+                        <div class="ed-task-list">${taskRowsHtml}</div>
                     </div>
-                </div>
-            </section>
 
-            <section class="premium-grid-lower">
-                <div class="premium-panel tasks-panel">
-                    <div class="premium-panel-head"><h3>Tasks Status</h3><span>${tT} total tasks</span></div>
-                    <div class="task-bars">
-                        ${[
-                            ['Total',tT,100,'blue'],['Ongoing',tOn,pct(tOn,tT),'cyan'],['Onhold',tOh,pct(tOh,tT),'amber'],['Pending',tP,pct(tP,tT),'muted'],['Completed',tC,pct(tC,tT),'green'],['Cancelled',tCn,pct(tCn,tT),'red']
-                        ].map(([label,value,percent,color])=>`
-                            <div class="task-bar ${color}"><label>${html(label)}</label><strong>${html(value)}</strong><div><span style="height:${Math.max(8, Number(percent))}%"></span></div><small>${html(percent)}%</small></div>
-                        `).join('')}
+                    <div class="ed-card ed-team-card">
+                        <div class="ed-card-head"><h3>EES Manpower</h3><span>Today</span></div>
+                        <div class="ed-team-grid">
+                            <div class="ed-team-box"><span>👥</span><strong>${WORKERS.length}</strong><small>Headcount</small></div>
+                            <div class="ed-team-box"><span>👷</span><strong>${WORKERS.length-onLeave}</strong><small>On Duty</small></div>
+                            <div class="ed-team-box"><span>🛌</span><strong>${onLeave}</strong><small>On Leave</small></div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="premium-panel manpower-panel">
-                    <div class="premium-panel-head"><h3>EES Manpower</h3><span>Today</span></div>
-                    <div class="manpower-cards">
-                        <div><span>👥</span><strong>${WORKERS.length}</strong><label>Headcount</label></div>
-                        <div><span>👷</span><strong>${WORKERS.length-onLeave}</strong><label>On Duty</label></div>
-                        <div><span>⛔</span><strong>${onLeave}</strong><label>On Leave</label></div>
+                    <div class="ed-card ed-live-card">
+                        <div class="ed-card-head"><h3>Recent Work Orders</h3><button type="button" onclick="setView('orders')">View All</button></div>
+                        <div class="ed-live-list">${liveUpdatesHtml}</div>
                     </div>
-                </div>
-
-                <div class="premium-panel live-panel">
-                    <div class="premium-panel-head"><h3>Recent Work Orders</h3><button type="button" onclick="setView('orders')">View All</button></div>
-                    <div class="live-list">${recentHtml}</div>
-                </div>
-            </section>
-
-            <section class="premium-footer-strip">
-                <span>⚡ Today: ${html(new Date().toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'}))}</span>
-                <span>⏱ Last Sync: ${html(new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))}</span>
-                <span>📡 Data Source: EES WO System</span>
-                <span class="auto-on">↻ Auto Refresh: ON</span>
-            </section>
+                </section>
+            </div>
         </div>`;
     }
 
@@ -2466,7 +2450,7 @@ function renderApp() {
         }
     }
 
-    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar ${view==='dashboard'?'dashboard-topbar':''}"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content">${contentHtml}</div>${detailHtml}</div></div></div>`;
+    root.innerHTML=`<div class="app"><div class="sidebar-overlay ${isSidebarOpen?'show':''}" onclick="toggleSidebar()"></div>${getSidebarHTML()}<div class="main"><div class="topbar ${view==='dashboard'?'dashboard-topbar':''}"><div style="display:flex;align-items:center;"><button class="menu-btn" onclick="toggleSidebar()">☰</button><div class="page-title">${pageLabels[view]||""}</div></div>${topbarExtra}</div><div class="body-wrap"><div class="content ${view==='dashboard'?'dashboard-fit-view':''}">${contentHtml}</div>${detailHtml}</div></div></div>`;
     publishAppView();
 }
 
