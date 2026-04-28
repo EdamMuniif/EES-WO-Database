@@ -2161,8 +2161,9 @@ function getSidebarHTML() {
     }
     return `
     <aside class="sidebar ${isSidebarOpen ? 'show' : ''}">
-        <div class="logo">
-            <div class="logo-title">EES WO CONTROL<br>DATABASE</div>
+        <div class="logo premium-logo">
+            <div class="brand-mark">⚡</div>
+            <div class="brand-copy"><div class="logo-title">EES WO CONTROL</div><div class="logo-sub">DATABASE</div></div>
         </div>
         <div class="sidebar-main">
             <div class="nav-grp"><div class="nav-grp-lbl">Main</div>
@@ -2260,7 +2261,12 @@ function renderApp() {
         let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
         orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
 
-        topbarExtra = `<div class="dashboard-top-status"><span class="dashboard-system-pill">System Online</span></div>`;
+        topbarExtra = `<div class="dashboard-top-actions">
+            <span class="dashboard-system-pill">System Online</span>
+            <span class="dashboard-action-chip" title="Notifications">🔔<b>3</b></span>
+            <span class="dashboard-action-chip" title="Last sync">⏱ ${html(new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))}</span>
+            <span class="dashboard-user-chip"><span>${html(ini(currentUser.name))}</span><strong>${html(currentUser.name || 'Admin User')}</strong></span>
+        </div>`;
 
         const woStatusChartHtml = buildDonutChartHTML({
             title: "WO Status Split",
@@ -2274,56 +2280,80 @@ function renderApp() {
             ]
         });
 
+        const pct = (value, total) => total ? Math.round((Number(value || 0) / Number(total || 0)) * 100) : 0;
+        const recentOrders = orders.slice()
+            .sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')))
+            .slice(0,4);
+        const recentHtml = recentOrders.length ? recentOrders.map(o => `
+            <div class="live-item">
+                <span class="live-dot" style="background:${getPriorityColor(o.priority)}"></span>
+                <div><strong>${html(o.id)}</strong><small>${html(o.asset)} · ${html(clampNumber(o.overallProgress || 0,0,100))}% progress</small></div>
+                <em>${html(formatDateNice(o.date))}</em>
+            </div>`).join('') : `<div class="live-empty">No work-order signal available.</div>`;
+
         contentHtml=`
-        <div id="dashboard-content" class="dashboard-content-v3">
-            <div>
-                <div class="sec-title">WO Data</div>
-                <div class="dashboard-wo-data-row dashboard-wo-data-row-polished">
-                    <div class="dashboard-wo-metric-grid wo-metric-grid-4">
-                        <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${orders.length}</div><div class="dashboard-mini-label">Total WOs</div></div>
-                        <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${activeCount}</div><div class="dashboard-mini-label">Active</div></div>
-                        <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${completedCount}</div><div class="dashboard-mini-label">Completed</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
-                    </div>
-                    <div class="dashboard-wo-data-chart">
-                        ${woStatusChartHtml}
-                    </div>
-                </div>
-            </div>
-
-            <div class="dashboard-two-col">
+        <div id="dashboard-content" class="premium-dashboard">
+            <section class="premium-hero">
                 <div>
-                    <div class="sec-title">Attention Required</div>
-                    <div class="dashboard-card-grid dashboard-card-grid-2">
-                        <div class="dashboard-mini-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><div class="dashboard-mini-value">${urgentCriticalCount}</div><div class="dashboard-mini-label">Urgent/Critical WOs</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${tOh}</div><div class="dashboard-mini-label">Onhold Tasks</div></div>
-                        <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${tCn}</div><div class="dashboard-mini-label">Cancelled Tasks</div></div>
+                    <h2>Dashboard</h2>
+                    <p>Overview of work orders and electrical operations</p>
+                </div>
+                <div class="hero-search"><span>⌕</span><input type="text" placeholder="Search work orders, tasks, assets..." onkeydown="if(event.key==='Enter'){setView('orders');}"></div>
+            </section>
+
+            <section class="premium-kpi-row">
+                <div class="premium-kpi kpi-total"><span class="kpi-icon">▣</span><div><label>Total WOs</label><strong>${orders.length}</strong><small>All time work orders</small></div><i class="mini-spark blue"></i></div>
+                <div class="premium-kpi kpi-active"><span class="kpi-icon">∿</span><div><label>Active</label><strong>${activeCount}</strong><small>Work orders in progress</small></div><i class="mini-spark cyan"></i></div>
+                <div class="premium-kpi kpi-completed"><span class="kpi-icon">✓</span><div><label>Completed</label><strong>${completedCount}</strong><small>Successfully completed</small></div><i class="mini-spark green"></i></div>
+                <div class="premium-kpi kpi-ongoing"><span class="kpi-icon">↻</span><div><label>Ongoing WOs</label><strong>${ongoingWOCount}</strong><small>Long-running work orders</small></div><i class="mini-spark amber"></i></div>
+            </section>
+
+            <section class="premium-grid-main">
+                <div class="premium-panel wo-split-panel">${woStatusChartHtml}</div>
+                <div class="premium-panel attention-panel">
+                    <div class="premium-panel-head"><h3>Attention Required</h3><span>High-voltage focus</span></div>
+                    <div class="attention-card-row">
+                        <div class="attention-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><span>⚠</span><strong>${urgentCriticalCount}</strong><label>Urgent / Critical WOs</label><small>Require immediate attention</small></div>
+                        <div class="attention-card amber"><span>↻</span><strong>${ongoingWOCount}</strong><label>Ongoing WOs</label><small>Long-running work orders</small></div>
+                        <div class="attention-card purple"><span>Ⅱ</span><strong>${tOh}</strong><label>Onhold Tasks</label><small>Paused tasks awaiting action</small></div>
+                        <div class="attention-card danger"><span>×</span><strong>${tCn}</strong><label>Cancelled Tasks</label><small>Cancelled / closed work items</small></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="premium-grid-lower">
+                <div class="premium-panel tasks-panel">
+                    <div class="premium-panel-head"><h3>Tasks Status</h3><span>${tT} total tasks</span></div>
+                    <div class="task-bars">
+                        ${[
+                            ['Total',tT,100,'blue'],['Ongoing',tOn,pct(tOn,tT),'cyan'],['Onhold',tOh,pct(tOh,tT),'amber'],['Pending',tP,pct(tP,tT),'muted'],['Completed',tC,pct(tC,tT),'green'],['Cancelled',tCn,pct(tCn,tT),'red']
+                        ].map(([label,value,percent,color])=>`
+                            <div class="task-bar ${color}"><label>${html(label)}</label><strong>${html(value)}</strong><div><span style="height:${Math.max(8, Number(percent))}%"></span></div><small>${html(percent)}%</small></div>
+                        `).join('')}
                     </div>
                 </div>
 
-                <div>
-                    <div class="sec-title">Tasks Status</div>
-                    <div class="dashboard-card-grid dashboard-card-grid-3 tasks-card-grid">
-                        <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${tT}</div><div class="dashboard-mini-label">Total</div></div>
-                        <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${tOn}</div><div class="dashboard-mini-label">Ongoing</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${tOh}</div><div class="dashboard-mini-label">Onhold</div></div>
-                        <div class="dashboard-mini-card muted"><div class="dashboard-mini-value">${tP}</div><div class="dashboard-mini-label">Pending</div></div>
-                        <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${tC}</div><div class="dashboard-mini-label">Completed</div></div>
-                        <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${tCn}</div><div class="dashboard-mini-label">Cancelled</div></div>
+                <div class="premium-panel manpower-panel">
+                    <div class="premium-panel-head"><h3>EES Manpower</h3><span>Today</span></div>
+                    <div class="manpower-cards">
+                        <div><span>👥</span><strong>${WORKERS.length}</strong><label>Headcount</label></div>
+                        <div><span>👷</span><strong>${WORKERS.length-onLeave}</strong><label>On Duty</label></div>
+                        <div><span>⛔</span><strong>${onLeave}</strong><label>On Leave</label></div>
                     </div>
                 </div>
-            </div>
 
-            <div>
-                <div class="sec-title">EES Manpower</div>
-                <div class="dashboard-card-grid dashboard-card-grid-3 manpower-compact-grid">
-                    <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${WORKERS.length}</div><div class="dashboard-mini-label">Headcount</div></div>
-                    <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${WORKERS.length-onLeave}</div><div class="dashboard-mini-label">On Duty</div></div>
-                    <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${onLeave}</div><div class="dashboard-mini-label">On Leave</div></div>
+                <div class="premium-panel live-panel">
+                    <div class="premium-panel-head"><h3>Recent Work Orders</h3><button type="button" onclick="setView('orders')">View All</button></div>
+                    <div class="live-list">${recentHtml}</div>
                 </div>
-            </div>
-            <div class="dashboard-footer-line">⚡ EES WO Control Database · Electrical Operations Dashboard</div>
+            </section>
+
+            <section class="premium-footer-strip">
+                <span>⚡ Today: ${html(new Date().toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'}))}</span>
+                <span>⏱ Last Sync: ${html(new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))}</span>
+                <span>📡 Data Source: EES WO System</span>
+                <span class="auto-on">↻ Auto Refresh: ON</span>
+            </section>
         </div>`;
     }
 
