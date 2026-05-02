@@ -13,7 +13,9 @@
             --login-bg: #f2f2f7; --login-btn: #007aff;
         }
 
-        body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; transition: background 0.3s, color 0.3s; overflow: hidden; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; transition: background 0.3s, color 0.3s; overflow: auto; -webkit-overflow-scrolling: touch; }
+    /* When mobile sidebar is open we add this class to body to prevent background scrolling */
+    body.no-scroll { overflow: hidden; height: 100vh; }
         input, select, textarea, button { font-family: inherit; }
 
         /* ── Loading overlay ── */
@@ -201,8 +203,11 @@
         .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 45; }
         @media (max-width: 768px) {
             .menu-btn { display: block; }
-            .sidebar { position: fixed; top: 0; left: 0; bottom: 0; transform: translateX(-100%); }
-            .sidebar.show { transform: translateX(0); }
+            /* Sidebar becomes a slide-over. Hide it from layout until explicitly shown so main fills full width. */
+            .sidebar { display: none; position: fixed; top: 0; left: 0; bottom: 0; transform: translateX(-100%); width: min(84vw, 320px); max-width: 92vw; }
+            .sidebar.show { display: flex; transform: translateX(0); }
+            /* Ensure main area always fills available width on small screens */
+            .main { width: 100% !important; }
             .sidebar-overlay.show { display: block; }
             .wo-card { padding: 14px 12px; gap: 5px; }
             .wo-id { font-size: 14px; } .wo-asset { font-size: 11px; } .wo-date { font-size: 11px; }
@@ -212,6 +217,9 @@
             .dashboard-wo-data-row { grid-template-columns: 1fr; }
             .dashboard-chart-body { flex-direction: column; align-items: stretch; }
             .dashboard-donut { width: 150px; min-width: 150px; margin: 0 auto; }
+            /* slightly larger tap targets for nav items */
+            .nav-item { padding: 12px 14px; font-size: 14px; }
+            .menu-btn { font-size: 28px; padding: 6px 10px; }
         }
 
 
@@ -236,6 +244,16 @@
     .attention-label { font-size: 10px; }
     .dashboard-wo-data-stats-compact { display: grid; grid-template-columns: 1fr 1fr; }
     .dashboard-wo-data-stats-compact .ts-item:first-child { grid-column: 1 / -1; }
+}
+
+/* Very small screens: stack WO card columns vertically so content doesn't get cramped */
+@media (max-width: 420px) {
+    .wo-card { flex-direction: column; align-items: stretch; gap: 8px; }
+    .wo-col.left, .wo-col.center, .wo-col.right { align-items: flex-start; text-align: left; width: 100%; }
+    .wo-col.right { align-items: flex-start; }
+    .topbar { padding: 12px 14px; }
+    .content { padding: 14px; }
+    .login-card { padding: 30px 18px; width: 100%; }
 }
 
 /* ── Flux Assistant ───────────────────────────────────────────── */
