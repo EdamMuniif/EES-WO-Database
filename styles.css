@@ -807,3 +807,272 @@
         margin: 0 auto;
     }
 }
+
+/* ── Day 43 Dashboard redesign ───────────────────────────────── */
+.dashboard-v4 {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding-bottom: 20px;
+}
+.dashboard-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.dashboard-v4 .dashboard-mini-card {
+    min-height: 78px;
+    padding: 14px 16px;
+    transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+.dashboard-v4 .dashboard-mini-card:hover,
+.dashboard-v4 .dashboard-section-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(10,132,255,.45);
+}
+.dashboard-v4-main-grid {
+    display: grid;
+    grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr);
+    gap: 18px;
+    align-items: stretch;
+}
+.dashboard-v4-deep-grid {
+    display: grid;
+    grid-template-columns: minmax(360px, 1.25fr) minmax(240px, .75fr) minmax(300px, 1fr);
+    gap: 18px;
+    align-items: stretch;
+}
+.dashboard-section-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    min-height: 0;
+    transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+.dashboard-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.dashboard-panel-total {
+    flex: 0 0 auto;
+    min-width: 54px;
+    text-align: right;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.dashboard-panel-total span {
+    display: block;
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 24px;
+    line-height: 1;
+}
+.dashboard-link-btn {
+    background: rgba(10,132,255,.12);
+    border: 1px solid rgba(10,132,255,.25);
+    color: var(--blue);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.dashboard-link-btn:hover { background: rgba(10,132,255,.2); }
+.dashboard-wo-list-mini {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+.dashboard-wo-row {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,.06);
+    color: var(--text);
+    border-radius: 11px;
+    padding: 11px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+.dashboard-wo-row:hover { border-color: rgba(10,132,255,.45); }
+.dashboard-wo-row-id {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+}
+.dashboard-wo-row-asset {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dashboard-wo-row-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.dashboard-wo-row-meta strong {
+    color: var(--text);
+    font-size: 13px;
+}
+.dashboard-empty-mini {
+    padding: 20px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    text-align: center;
+    font-size: 12px;
+}
+.dashboard-v4 .dashboard-chart-card {
+    min-height: 240px;
+}
+.dashboard-v4 .dashboard-chart-body {
+    align-items: center;
+    gap: 24px;
+}
+.dashboard-v4 .dashboard-donut {
+    width: 170px;
+    min-width: 170px;
+}
+.dashboard-v4 .dashboard-donut-total { font-size: 28px; }
+.task-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+.task-bar-row {
+    display: grid;
+    grid-template-columns: 92px minmax(80px, 1fr) 42px;
+    align-items: center;
+    gap: 10px;
+}
+.task-bar-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 800;
+}
+.task-bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,.05);
+    overflow: hidden;
+}
+.task-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    min-width: 2px;
+}
+.task-bar-value {
+    color: var(--text);
+    font-weight: 800;
+    font-size: 12px;
+    text-align: right;
+}
+.task-summary-table {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+}
+.task-summary-cell {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,.05);
+    border-radius: 10px;
+    padding: 9px 8px;
+}
+.task-summary-cell strong {
+    display: block;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--text);
+}
+.task-summary-cell span {
+    display: block;
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: .4px;
+}
+.task-summary-cell.blue strong { color: var(--blue); }
+.task-summary-cell.green strong { color: var(--green); }
+.task-summary-cell.orange strong { color: var(--orange); }
+.task-summary-cell.muted strong { color: var(--muted); }
+.task-summary-cell.danger strong { color: var(--red); }
+.manpower-metrics-v4 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+.manpower-metric {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,.06);
+    border-left: 4px solid var(--muted2);
+    border-radius: 11px;
+    padding: 12px;
+    text-align: left;
+    color: var(--text);
+    cursor: pointer;
+}
+.manpower-metric.blue { border-left-color: var(--blue); }
+.manpower-metric.danger { border-left-color: var(--red); }
+.manpower-metric strong {
+    display: block;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 24px;
+    line-height: 1;
+}
+.manpower-metric.blue strong { color: var(--blue); }
+.manpower-metric.danger strong { color: var(--red); }
+.manpower-metric span {
+    display: block;
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+
+@media (max-width: 1200px) {
+    .dashboard-v4-main-grid,
+    .dashboard-v4-deep-grid { grid-template-columns: 1fr; }
+    .manpower-metrics-v4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 768px) {
+    .dashboard-v4 { gap: 16px; }
+    .dashboard-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dashboard-v4 .dashboard-chart-body { flex-direction: column; align-items: stretch; }
+    .dashboard-v4 .dashboard-donut { width: 165px; min-width: 165px; margin: 0 auto; }
+    .task-bar-row { grid-template-columns: 82px minmax(70px, 1fr) 34px; gap: 8px; }
+    .task-summary-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .manpower-metrics-v4 { grid-template-columns: 1fr; }
+}

@@ -143,7 +143,7 @@ function formatPct(part, total) {
     return `${Math.round((Number(part) / Number(total)) * 100)}%`;
 }
 
-function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "Total", segments = [] }) {
+function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "Total", totalLabel = "Total", segments = [] }) {
     const cleanSegments = segments
         .map(seg => ({
             label: String(seg.label || "").trim(),
@@ -156,12 +156,13 @@ function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "T
 
     if (!safeTotal || !cleanSegments.length) {
         return `
-        <div class="dashboard-chart-card">
-            <div class="dashboard-chart-head">
+        <div class="dashboard-chart-card dashboard-section-card">
+            <div class="dashboard-panel-head">
                 <div>
                     <div class="dashboard-chart-title">${html(title)}</div>
                     ${subtitle ? `<div class="dashboard-chart-subtitle">${html(subtitle)}</div>` : ''}
                 </div>
+                <div class="dashboard-panel-total"><span>${html(String(safeTotal))}</span>${html(totalLabel)}</div>
             </div>
             <div class="dashboard-chart-empty">No data available yet.</div>
         </div>`;
@@ -180,12 +181,13 @@ function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "T
     }
 
     return `
-    <div class="dashboard-chart-card">
-        <div class="dashboard-chart-head">
+    <div class="dashboard-chart-card dashboard-section-card">
+        <div class="dashboard-panel-head">
             <div>
                 <div class="dashboard-chart-title">${html(title)}</div>
                 ${subtitle ? `<div class="dashboard-chart-subtitle">${html(subtitle)}</div>` : ''}
             </div>
+            <div class="dashboard-panel-total"><span>${html(String(safeTotal))}</span>${html(totalLabel)}</div>
         </div>
         <div class="dashboard-chart-body">
             <div class="dashboard-donut" style="--donut-fill: conic-gradient(${gradientStops.join(', ')});">
@@ -211,6 +213,91 @@ function buildDonutChartHTML({ title, subtitle = "", total = 0, centerLabel = "T
         </div>
     </div>`;
 }
+
+function parseWODateValue(value) {
+    const ds = formatForInput(value);
+    if (!ds) return 0;
+    const time = new Date(`${ds}T00:00:00`).getTime();
+    return Number.isFinite(time) ? time : 0;
+}
+
+function getWOPrimaryTaskStatus(wo) {
+    const tasks = Array.isArray(wo?.tasks) ? wo.tasks : [];
+    if (!tasks.length) return "Pending";
+    if (tasks.some(t => t.status === "Ongoing")) return "Ongoing";
+    if (tasks.some(t => t.status === "Onhold")) return "Onhold";
+    if (tasks.every(t => t.status === "Completed")) return "Completed";
+    if (tasks.every(t => t.status === "Cancelled")) return "Cancelled";
+    return tasks[0]?.status || "Pending";
+}
+
+function renderDashboardWOList(title, items, viewAllTarget = "ongoing") {
+    const rows = items.slice(0, 5).map(wo => {
+        const progress = clampNumber(wo.overallProgress || 0, 0, 100);
+        const status = getWOPrimaryTaskStatus(wo);
+        return `
+            <button type="button" class="dashboard-wo-row" onclick="selectOrder(${jsArg(wo.id)})">
+                <div class="dashboard-wo-row-main">
+                    <div class="dashboard-wo-row-id">${html(wo.id)}</div>
+                    <div class="dashboard-wo-row-asset">${html(wo.asset || "-")}</div>
+                </div>
+                <div class="dashboard-wo-row-meta">
+                    <span>${html(status)}</span>
+                    <strong>${progress}%</strong>
+                </div>
+            </button>`;
+    }).join("");
+
+    return `
+        <section class="dashboard-section-card dashboard-list-card">
+            <div class="dashboard-panel-head">
+                <div>
+                    <div class="dashboard-chart-title">${html(title)}</div>
+                    <div class="dashboard-chart-subtitle">${items.length} matching work orders</div>
+                </div>
+                <button class="dashboard-link-btn" type="button" onclick="setView(${jsArg(viewAllTarget)})">View all</button>
+            </div>
+            <div class="dashboard-wo-list-mini">
+                ${rows || `<div class="dashboard-empty-mini">No work orders found.</div>`}
+            </div>
+        </section>`;
+}
+
+function renderTaskStatusBarGraph({ total, ongoing, onhold, pending, completed, cancelled }) {
+    const rows = [
+        { label: "Completed", value: completed, color: "#0a84ff", cls: "blue" },
+        { label: "Ongoing", value: ongoing, color: "#32d74b", cls: "green" },
+        { label: "On Hold", value: onhold, color: "#ff9500", cls: "orange" },
+        { label: "Pending", value: pending, color: "#8e8e93", cls: "muted" },
+        { label: "Cancelled", value: cancelled, color: "#ff3b30", cls: "danger" }
+    ];
+
+    return `
+        <section class="dashboard-section-card task-bar-card">
+            <div class="dashboard-panel-head">
+                <div>
+                    <div class="dashboard-chart-title">Task Status</div>
+                    <div class="dashboard-chart-subtitle">Lifecycle of all WO tasks</div>
+                </div>
+                <div class="dashboard-panel-total"><span>${html(String(total))}</span>Total</div>
+            </div>
+            <div class="task-bars">
+                ${rows.map(row => {
+                    const pct = total ? Math.max(1, Math.round((row.value / total) * 100)) : 0;
+                    return `
+                        <div class="task-bar-row">
+                            <div class="task-bar-label"><span class="dashboard-legend-dot" style="background:${row.color}"></span>${html(row.label)}</div>
+                            <div class="task-bar-track"><div class="task-bar-fill" style="width:${pct}%;background:${row.color}"></div></div>
+                            <div class="task-bar-value">${html(String(row.value))}</div>
+                        </div>`;
+                }).join("")}
+            </div>
+            <div class="task-summary-table">
+                ${rows.map(row => `<div class="task-summary-cell ${row.cls}"><strong>${html(String(row.value))}</strong><span>${html(row.label)}</span></div>`).join("")}
+            </div>
+        </section>`;
+}
+
 
 // ── Day 3: Role / permission helpers ─────────────────────────────
 function normalizeRole(role) {
@@ -2253,11 +2340,9 @@ function renderApp() {
         const activeOrders = orders.filter(o => o.overallProgress < 100);
         const activeCount = activeOrders.length;
         const completedCount = orders.filter(o=>o.overallProgress===100).length;
-        const urgentCriticalCount = activeOrders.filter(o=>o.priority==="Urgent"||o.priority==="Critical").length;
-        const ongoingWOCount = activeOrders.filter(o=>o.tasks.some(t=>t.status==="Ongoing")).length;
+        const ongoingOrders = activeOrders.filter(o=>o.tasks.some(t=>t.status==="Ongoing"));
+        const ongoingWOCount = ongoingOrders.length;
 
-        // Non-overlapping WO status buckets for the doughnut chart:
-        // Completed = blue, Ongoing = green, Active = amber, Cancelled = red.
         const cancelledWOCount = activeOrders.filter(o =>
             !o.tasks.some(t => t.status === "Ongoing") &&
             o.tasks.length > 0 &&
@@ -2268,10 +2353,15 @@ function renderApp() {
         let tT=0,tOn=0,tOh=0,tP=0,tC=0,tCn=0;
         orders.forEach(o=>o.tasks.forEach(t=>{tT++;if(t.status==="Ongoing")tOn++;if(t.status==="Onhold")tOh++;if(t.status==="Pending")tP++;if(t.status==="Completed")tC++;if(t.status==="Cancelled")tCn++;}));
 
+        const recentWOs = [...orders]
+            .sort((a, b) => parseWODateValue(b.date) - parseWODateValue(a.date) || String(b.id).localeCompare(String(a.id)))
+            .slice(0, 3);
+
         const woStatusChartHtml = buildDonutChartHTML({
             title: "WO Status Split",
             subtitle: "Completed / Ongoing / Active / Cancelled",
             total: orders.length,
+            totalLabel: "WOs",
             centerLabel: "Total WOs",
             segments: [
                 { label: "Completed", value: completedCount, color: "#0a84ff" },
@@ -2282,53 +2372,38 @@ function renderApp() {
         });
 
         contentHtml=`
-        <div id="dashboard-content" class="dashboard-content-v3">
-            <div>
-                <div class="sec-title">WO Data</div>
-                <div class="dashboard-wo-data-row dashboard-wo-data-row-polished">
-                    <div class="dashboard-wo-metric-grid wo-metric-grid-4">
-                        <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${orders.length}</div><div class="dashboard-mini-label">Total WOs</div></div>
-                        <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${activeCount}</div><div class="dashboard-mini-label">Active</div></div>
-                        <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${completedCount}</div><div class="dashboard-mini-label">Completed</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
-                    </div>
-                    <div class="dashboard-wo-data-chart">
-                        ${woStatusChartHtml}
-                    </div>
-                </div>
+        <div id="dashboard-content" class="dashboard-v4">
+            <div class="dashboard-kpi-grid">
+                <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${orders.length}</div><div class="dashboard-mini-label">Total WOs</div></div>
+                <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${activeOnlyCount}</div><div class="dashboard-mini-label">Active</div></div>
+                <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${completedCount}</div><div class="dashboard-mini-label">Completed</div></div>
+                <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
             </div>
 
-            <div class="dashboard-two-col">
-                <div>
-                    <div class="sec-title">Attention Required</div>
-                    <div class="dashboard-card-grid dashboard-card-grid-2">
-                        <div class="dashboard-mini-card ${urgentCriticalCount > 0 ? 'danger' : 'green'}"><div class="dashboard-mini-value">${urgentCriticalCount}</div><div class="dashboard-mini-label">Urgent/Critical WOs</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${ongoingWOCount}</div><div class="dashboard-mini-label">Ongoing WOs</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${tOh}</div><div class="dashboard-mini-label">Onhold Tasks</div></div>
-                        <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${tCn}</div><div class="dashboard-mini-label">Cancelled Tasks</div></div>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="sec-title">Tasks Status</div>
-                    <div class="dashboard-card-grid dashboard-card-grid-3 tasks-card-grid">
-                        <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${tT}</div><div class="dashboard-mini-label">Total</div></div>
-                        <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${tOn}</div><div class="dashboard-mini-label">Ongoing</div></div>
-                        <div class="dashboard-mini-card orange"><div class="dashboard-mini-value">${tOh}</div><div class="dashboard-mini-label">Onhold</div></div>
-                        <div class="dashboard-mini-card muted"><div class="dashboard-mini-value">${tP}</div><div class="dashboard-mini-label">Pending</div></div>
-                        <div class="dashboard-mini-card green"><div class="dashboard-mini-value">${tC}</div><div class="dashboard-mini-label">Completed</div></div>
-                        <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${tCn}</div><div class="dashboard-mini-label">Cancelled</div></div>
-                    </div>
-                </div>
+            <div class="dashboard-v4-main-grid">
+                ${renderDashboardWOList("Ongoing WOs", ongoingOrders, "ongoing")}
+                ${woStatusChartHtml}
             </div>
 
-            <div>
-                <div class="sec-title">EES Manpower</div>
-                <div class="dashboard-card-grid dashboard-card-grid-3 manpower-compact-grid">
-                    <div class="dashboard-mini-card neutral"><div class="dashboard-mini-value">${WORKERS.length}</div><div class="dashboard-mini-label">Headcount</div></div>
-                    <div class="dashboard-mini-card blue"><div class="dashboard-mini-value">${WORKERS.length-onLeave}</div><div class="dashboard-mini-label">On Duty</div></div>
-                    <div class="dashboard-mini-card danger"><div class="dashboard-mini-value">${onLeave}</div><div class="dashboard-mini-label">On Leave</div></div>
-                </div>
+            <div class="dashboard-v4-deep-grid">
+                ${renderTaskStatusBarGraph({ total: tT, ongoing: tOn, onhold: tOh, pending: tP, completed: tC, cancelled: tCn })}
+
+                <section class="dashboard-section-card manpower-card-v4">
+                    <div class="dashboard-panel-head">
+                        <div>
+                            <div class="dashboard-chart-title">EES Manpower</div>
+                            <div class="dashboard-chart-subtitle">Team availability</div>
+                        </div>
+                        <button class="dashboard-link-btn" type="button" onclick="setView('workers')">Team</button>
+                    </div>
+                    <div class="manpower-metrics-v4">
+                        <button class="manpower-metric" type="button" onclick="setView('workers')"><strong>${WORKERS.length}</strong><span>Headcount</span></button>
+                        <button class="manpower-metric blue" type="button" onclick="setView('workers')"><strong>${WORKERS.length-onLeave}</strong><span>On Duty</span></button>
+                        <button class="manpower-metric danger" type="button" onclick="setView('workers')"><strong>${onLeave}</strong><span>On Leave</span></button>
+                    </div>
+                </section>
+
+                ${renderDashboardWOList("Recent Work Orders", recentWOs, "orders")}
             </div>
         </div>`;
     }
