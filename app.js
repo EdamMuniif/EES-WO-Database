@@ -72,7 +72,8 @@ const pageLabels = {
     ongoing: "Ongoing WOs",
     completed: "WO Completed",
     upload: "Manage Data",
-    workers: "EES Team"
+    workers: "EES Team",
+    inventory: "Inventory"
 };
 
 
@@ -229,6 +230,213 @@ function getWOPrimaryTaskStatus(wo) {
     if (tasks.every(t => t.status === "Completed")) return "Completed";
     if (tasks.every(t => t.status === "Cancelled")) return "Cancelled";
     return tasks[0]?.status || "Pending";
+}
+
+// ── Inventory rendering (Phase 1A) ───────────────────────────────
+
+/**
+ * Compute filtered + sorted + paginated inventory list for the current
+ * view state. Returns { items, totalMatched, totalPages, allUnits }.
+ */
+function getFilteredInventory() {
+    const search = (inventoryView.search || "").toLowerCase().trim();
+    const statusFilter = inventoryView.statusFilter;
+    const unitFilter = inventoryView.unitFilter;
+
+    let result = inventoryItems;
+
+    if (search) {
+        const tokens = search.split(/\s+/).filter(Boolean);
+        result = result.filter(item => {
+            const haystack = `${item.itemNo} ${item.name} ${item.search} ${item.unit}`.toLowerCase();
+            return tokens.every(tok => haystack.includes(tok));
+        });
+    }
+
+    if (statusFilter === "available") {
+        result = result.filter(i => i.available);
+    } else if (statusFilter === "unavailable") {
+        result = result.filter(i => !i.available);
+    }
+
+    if (unitFilter && unitFilter !== "all") {
+        result = result.filter(i => i.unit === unitFilter);
+    }
+
+    // Sort
+    const dir = inventoryView.sortDir === "desc" ? -1 : 1;
+    const sortBy = inventoryView.sortBy;
+    result = [...result].sort((a, b) => {
+        let av, bv;
+        if (sortBy === "totalAvail") {
+            av = Number(a.totalAvail) || 0;
+            bv = Number(b.totalAvail) || 0;
+            return (av - bv) * dir;
+        }
+        av = String(a[sortBy] || "").toLowerCase();
+        bv = String(b[sortBy] || "").toLowerCase();
+        return av < bv ? -1 * dir : av > bv ? 1 * dir : 0;
+    });
+
+    const totalMatched = result.length;
+    const pageSize = inventoryView.pageSize;
+    const totalPages = Math.max(1, Math.ceil(totalMatched / pageSize));
+    const page = Math.min(inventoryView.page, totalPages);
+    const start = (page - 1) * pageSize;
+    const items = result.slice(start, start + pageSize);
+
+    // Distinct unit list for filter dropdown
+    const unitSet = new Set();
+    inventoryItems.forEach(i => { if (i.unit) unitSet.add(i.unit); });
+    const allUnits = [...unitSet].sort();
+
+    return { items, totalMatched, totalPages, allUnits, page };
+}
+
+function renderInventoryView() {
+    if (!isAdminUser()) {
+        return `<div style="text-align:center;padding:60px;color:var(--muted);">Inventory is admin-only.</div>`;
+    }
+
+    if (inventoryLoading && inventoryItems.length === 0) {
+        return `<div style="text-align:center;padding:60px;color:var(--muted);">⏳ Loading inventory...</div>`;
+    }
+
+    if (inventoryItems.length === 0) {
+        // Empty state — first-time setup: show import UI
+        return `
+        <div class="inventory-page">
+            <div class="sec-title">📦 Inventory</div>
+            <div class="inventory-empty-card">
+                <div style="font-size:48px;margin-bottom:12px;">📦</div>
+                <div style="font-size:16px;font-weight:600;margin-bottom:6px;">No inventory loaded</div>
+                <div style="color:var(--muted);font-size:13px;margin-bottom:22px;line-height:1.5;">
+                    Import an inventory JSON file to get started.<br>
+                    Use the <code>inventory_clean.json</code> file from your downloads.
+                </div>
+                <input id="inv-import-file" type="file" accept=".json" style="display:none" onchange="invHandleImportFile(event)">
+                <button class="btn btn-primary" onclick="document.getElementById('inv-import-file').click()" style="padding:12px 26px;">
+                    📂 Import inventory_clean.json
+                </button>
+                <div style="margin-top:14px;">
+                    <button class="audit-filter-btn" onclick="invRefresh()">↻ Retry load</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    const { items, totalMatched, totalPages, allUnits, page } = getFilteredInventory();
+    const total = inventoryItems.length;
+    const availCount = inventoryItems.filter(i => i.available).length;
+    const unavailCount = total - availCount;
+
+    const lastImportTs = inventoryMeta?.lastImport;
+    const lastImportText = lastImportTs
+        ? `${new Date(lastImportTs).toLocaleString("en-GB", { dateStyle:"medium", timeStyle:"short" })} · ${html(inventoryMeta?.importedBy || "Unknown")}`
+        : "Never";
+
+    const sortIndicator = (field) => {
+        if (inventoryView.sortBy !== field) return "";
+        return inventoryView.sortDir === "asc" ? " ▲" : " ▼";
+    };
+
+    const unitOptions = ['<option value="all">All units</option>']
+        .concat(allUnits.map(u => `<option value="${html(u)}" ${inventoryView.unitFilter === u ? "selected" : ""}>${html(u)}</option>`))
+        .join("");
+
+    // Rows
+    let rowsHtml = "";
+    if (items.length === 0) {
+        rowsHtml = `<tr><td colspan="6" class="inv-empty-row">No matching items found.</td></tr>`;
+    } else {
+        rowsHtml = items.map(item => {
+            const statusClass = item.available ? "inv-status-avail" : "inv-status-unavail";
+            const statusLabel = item.available ? "Available" : "Unavailable";
+            return `
+                <tr>
+                    <td class="inv-cell-id">${html(item.itemNo)}</td>
+                    <td class="inv-cell-name">
+                        <div class="inv-name-main">${html(item.name)}</div>
+                        ${item.search ? `<div class="inv-name-search">${html(item.search)}</div>` : ""}
+                    </td>
+                    <td class="inv-cell-unit">${html(item.unit)}</td>
+                    <td class="inv-cell-num"><strong>${item.totalAvail}</strong></td>
+                    <td class="inv-cell-num inv-cell-detail">${item.physical} / ${item.reservable}</td>
+                    <td><span class="inv-status-badge ${statusClass}">${html(statusLabel)}</span></td>
+                </tr>`;
+        }).join("");
+    }
+
+    // Pagination controls
+    let pagerHtml = "";
+    if (totalPages > 1) {
+        const prevDisabled = page <= 1 ? "disabled" : "";
+        const nextDisabled = page >= totalPages ? "disabled" : "";
+        pagerHtml = `
+            <div class="inv-pager">
+                <button class="audit-filter-btn" onclick="invSetPage(${page - 1})" ${prevDisabled}>← Prev</button>
+                <span class="inv-pager-info">Page ${page} of ${totalPages} · ${totalMatched.toLocaleString()} items</span>
+                <button class="audit-filter-btn" onclick="invSetPage(${page + 1})" ${nextDisabled}>Next →</button>
+            </div>`;
+    } else {
+        pagerHtml = `<div class="inv-pager"><span class="inv-pager-info">${totalMatched.toLocaleString()} of ${total.toLocaleString()} items</span></div>`;
+    }
+
+    return `
+    <div class="inventory-page">
+        <div class="inv-header">
+            <div>
+                <div class="sec-title" style="margin-bottom:4px;">📦 Inventory</div>
+                <div style="color:var(--muted);font-size:12px;">
+                    Last imported: ${lastImportText} ·
+                    <span style="color:var(--green);">${availCount.toLocaleString()} available</span> ·
+                    <span style="color:var(--red);">${unavailCount.toLocaleString()} unavailable</span>
+                </div>
+            </div>
+            <div class="inv-header-actions">
+                <input id="inv-import-file" type="file" accept=".json" style="display:none" onchange="invHandleImportFile(event)">
+                <button class="audit-filter-btn" onclick="invRefresh()" title="Reload from Firebase">↻ Refresh</button>
+                <button class="audit-filter-btn" onclick="document.getElementById('inv-import-file').click()" title="Re-import inventory">⬆ Re-import</button>
+            </div>
+        </div>
+
+        <div class="inv-controls">
+            <input
+                type="search"
+                class="inv-search-input"
+                placeholder="Search by item number, product name, or search code..."
+                value="${html(inventoryView.search)}"
+                oninput="invSearch(this.value)"
+                autocomplete="off"
+            >
+            <div class="inv-filters">
+                <button class="audit-filter-btn ${inventoryView.statusFilter === 'all' ? 'active' : ''}" onclick="invSetStatusFilter('all')">All</button>
+                <button class="audit-filter-btn ${inventoryView.statusFilter === 'available' ? 'active' : ''}" onclick="invSetStatusFilter('available')">Available</button>
+                <button class="audit-filter-btn ${inventoryView.statusFilter === 'unavailable' ? 'active' : ''}" onclick="invSetStatusFilter('unavailable')">Unavailable</button>
+                <select class="inv-unit-select" onchange="invSetUnitFilter(this.value)">
+                    ${unitOptions}
+                </select>
+            </div>
+        </div>
+
+        <div class="inv-table-wrap" id="inventory-list-wrap">
+            <table class="inv-table">
+                <thead>
+                    <tr>
+                        <th class="inv-th-sortable" onclick="invToggleSort('itemNo')">Item No${sortIndicator("itemNo")}</th>
+                        <th class="inv-th-sortable" onclick="invToggleSort('name')">Product${sortIndicator("name")}</th>
+                        <th>Unit</th>
+                        <th class="inv-th-sortable inv-th-num" onclick="invToggleSort('totalAvail')">Total Available${sortIndicator("totalAvail")}</th>
+                        <th class="inv-th-num">Physical / Reservable</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>
+
+        ${pagerHtml}
+    </div>`;
 }
 
 function renderDashboardWOList(title, items, viewAllTarget = "ongoing") {
@@ -915,6 +1123,21 @@ let realtimeListeners = [];
 let presencePingTimer = null;
 let viewerPresence = { rc: "5794", name: "Ahmed Miushaan", online: false, lastSeen: 0 };
 
+// ── Inventory state (Phase 1A) ───────────────────────────────────
+let inventoryItems = [];           // full list, loaded once from Firebase
+let inventoryLoading = false;
+let inventoryLoadedAt = 0;
+let inventoryMeta = null;          // { lastImport, recordCount, importedBy }
+let inventoryView = {
+    search: "",
+    statusFilter: "all",          // all | available | unavailable
+    unitFilter: "all",
+    page: 1,
+    pageSize: 50,
+    sortBy: "name",               // name | itemNo | totalAvail
+    sortDir: "asc"
+};
+
 // ── Loading UI ────────────────────────────────────────────────────
 function showLoad(msg="Loading...") {
     document.getElementById('loading-msg').textContent = msg;
@@ -1008,7 +1231,170 @@ async function dbLoadAll() {
     lastUpdate = meta.lastUpdate || "Never";
 }
 
-// ── Real-time listener: auto-refresh when any device changes data ──
+// ── Inventory: load + import (Phase 1A) ──────────────────────────
+
+/**
+ * Sanitize an inventory item number for use as a Firebase key.
+ * Firebase keys cannot contain: . $ # [ ] / and must not be empty.
+ * Item numbers like "1-0000015" are safe; we still strip just in case.
+ */
+function inventoryItemKey(itemNo) {
+    if (!itemNo) return null;
+    const cleaned = String(itemNo).replace(/[.$#\[\]\/]/g, "_").trim();
+    return cleaned || null;
+}
+
+/**
+ * Load all inventory from Firebase. Cached in memory for the session.
+ * Admin-only.
+ */
+async function loadInventory(force = false) {
+    if (!isAdminUser()) return [];
+    if (inventoryLoading) return inventoryItems;
+    if (!force && inventoryItems.length > 0) return inventoryItems;
+
+    inventoryLoading = true;
+    try {
+        const [itemsSnap, metaSnap] = await Promise.all([
+            db.ref("ees_inventory").once("value"),
+            db.ref("ees_inventory_meta").once("value")
+        ]);
+        const data = itemsSnap.val() || {};
+        inventoryItems = Object.values(data);
+        inventoryMeta = metaSnap.val() || null;
+        inventoryLoadedAt = Date.now();
+    } catch (err) {
+        console.error("Inventory load failed:", err);
+        showToast("⚠️ Could not load inventory: " + err.message, true);
+    } finally {
+        inventoryLoading = false;
+    }
+    return inventoryItems;
+}
+
+/**
+ * Import a JSON file (the inventory_clean.json we generated server-side)
+ * into Firebase. Batches in chunks of 500 to avoid timeouts.
+ */
+async function importInventoryFromJSON(jsonText) {
+    if (!isAdminUser()) {
+        showToast("Admin only.", true);
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonText);
+    } catch (err) {
+        showToast("❌ Invalid JSON: " + err.message, true);
+        return;
+    }
+
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    if (!items.length) {
+        showToast("⚠️ No 'items' array found in JSON.", true);
+        return;
+    }
+
+    if (!confirm(`Import ${items.length.toLocaleString()} inventory items?\n\nThis will REPLACE the existing inventory database.`)) {
+        return;
+    }
+
+    showLoad(`Preparing ${items.length.toLocaleString()} items...`);
+
+    // Build keyed object, dedupe, validate
+    const validated = {};
+    let skipped = 0;
+    for (const raw of items) {
+        const key = inventoryItemKey(raw.itemNo);
+        if (!key) { skipped++; continue; }
+        if (!raw.name || !raw.unit) { skipped++; continue; }
+
+        validated[key] = {
+            itemNo: String(raw.itemNo || ""),
+            name: String(raw.name || ""),
+            search: String(raw.search || ""),
+            unit: String(raw.unit || ""),
+            physical: Number(raw.physical) || 0,
+            ordered: Number(raw.ordered) || 0,
+            reservable: Number(raw.reservable) || 0,
+            totalAvail: Number(raw.totalAvail) || 0,
+            status: String(raw.status || ""),
+            available: !!raw.available
+        };
+    }
+
+    const keys = Object.keys(validated);
+    const totalToWrite = keys.length;
+    if (!totalToWrite) {
+        hideLoad();
+        showToast("⚠️ No valid items to import.", true);
+        return;
+    }
+
+    // First, clear existing inventory so we start clean
+    showLoad("Clearing old inventory...");
+    try {
+        await db.ref("ees_inventory").remove();
+    } catch (err) {
+        hideLoad();
+        showToast("❌ Could not clear old inventory: " + err.message, true);
+        return;
+    }
+
+    // Batch in chunks of 500 — Firebase update() with too many keys at once
+    // can hit timeouts on slow networks (relevant for MTCC).
+    const CHUNK_SIZE = 500;
+    let written = 0;
+    for (let i = 0; i < keys.length; i += CHUNK_SIZE) {
+        const chunk = keys.slice(i, i + CHUNK_SIZE);
+        const updates = {};
+        for (const k of chunk) {
+            updates["ees_inventory/" + k] = validated[k];
+        }
+        try {
+            await db.ref().update(updates);
+            written += chunk.length;
+            showLoad(`Importing ${written.toLocaleString()} / ${totalToWrite.toLocaleString()}...`);
+        } catch (err) {
+            hideLoad();
+            showToast(`❌ Failed at chunk ${i}: ${err.message}`, true);
+            return;
+        }
+    }
+
+    // Write meta record
+    try {
+        const meta = {
+            lastImport: firebase.database.ServerValue.TIMESTAMP,
+            recordCount: written,
+            skippedCount: skipped,
+            importedBy: currentUser?.name || "Unknown",
+            importedByRc: currentUser?.rc || ""
+        };
+        await db.ref("ees_inventory_meta").set(meta);
+    } catch (err) {
+        console.warn("Inventory meta write failed:", err);
+    }
+
+    // Audit
+    try {
+        await auditLog("INVENTORY_IMPORTED", {
+            recordCount: written,
+            skippedCount: skipped
+        });
+    } catch (e) { /* audit is non-critical */ }
+
+    // Refresh local cache
+    inventoryItems = Object.values(validated);
+    inventoryLoadedAt = Date.now();
+
+    hideLoad();
+    showToast(`✅ Imported ${written.toLocaleString()} items${skipped ? ` (${skipped} skipped)` : ""}`);
+    renderApp();
+}
+
+
 function startRealtimeSync() {
     stopRealtimeSync();
 
@@ -1145,7 +1531,67 @@ window.runReportAction = function(action) {
 };
 window.setView = v => {
     if (v === "upload" && !requireAdmin("manage data imports")) return;
-    view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; isReportsMenuOpen=false; isWOViewsMenuOpen=false; renderApp(); publishAppView();
+    if (v === "inventory" && !requireAdmin("view inventory")) return;
+    view=v; selectedWO=null; selectedWorker=null; leaveModalWorker=null; isSidebarOpen=false; isReportsMenuOpen=false; isWOViewsMenuOpen=false;
+
+    // Lazy-load inventory the first time the view opens
+    if (v === "inventory" && inventoryItems.length === 0 && !inventoryLoading) {
+        loadInventory().then(() => renderApp()).catch(() => {});
+    }
+
+    renderApp();
+    publishAppView();
+};
+
+// ── Inventory window handlers ────────────────────────────────────
+window.invSearch = (val) => {
+    inventoryView.search = String(val || "").trim();
+    inventoryView.page = 1;
+    renderApp();
+};
+window.invSetStatusFilter = (val) => {
+    inventoryView.statusFilter = val || "all";
+    inventoryView.page = 1;
+    renderApp();
+};
+window.invSetUnitFilter = (val) => {
+    inventoryView.unitFilter = val || "all";
+    inventoryView.page = 1;
+    renderApp();
+};
+window.invSetPage = (page) => {
+    const p = parseInt(page, 10);
+    if (Number.isFinite(p) && p > 0) inventoryView.page = p;
+    renderApp();
+    const wrap = document.getElementById("inventory-list-wrap");
+    if (wrap) wrap.scrollTop = 0;
+};
+window.invToggleSort = (field) => {
+    if (inventoryView.sortBy === field) {
+        inventoryView.sortDir = inventoryView.sortDir === "asc" ? "desc" : "asc";
+    } else {
+        inventoryView.sortBy = field;
+        inventoryView.sortDir = "asc";
+    }
+    inventoryView.page = 1;
+    renderApp();
+};
+window.invRefresh = () => {
+    loadInventory(true).then(() => renderApp()).catch(() => {});
+};
+window.invHandleImportFile = (event) => {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        importInventoryFromJSON(String(reader.result || ""));
+        // Reset input so same file can be re-imported if needed
+        event.target.value = "";
+    };
+    reader.onerror = () => {
+        showToast("❌ Could not read file: " + reader.error?.message, true);
+    };
+    reader.readAsText(file);
 };
 window.setFilter = f => {
     const state = getOrderViewState("orders");
@@ -2271,6 +2717,7 @@ function getSidebarHTML() {
             </div>
             <div class="nav-grp"><div class="nav-grp-lbl">Reports & Data</div>
                 ${!iv?`<div class="nav-item ${view==='upload'?'active':''}" onclick="setView('upload')"><span>⬆️</span> Manage Data</div>`:''}
+                ${!iv?`<div class="nav-item ${view==='inventory'?'active':''}" onclick="setView('inventory')"><span>📦</span> Inventory</div>`:''}
                 <div class="reports-menu">
                     <button class="nav-item reports-menu-btn" type="button" onclick="toggleReportsMenu(event)">
                         <span>📦</span><span class="reports-menu-text">Exports</span><span class="reports-caret">▾</span>
@@ -2465,6 +2912,10 @@ function renderApp() {
                 <button class="btn" style="background:var(--red);color:#fff;width:100%;padding:14px;font-size:14px;justify-content:center;" onclick="clearDatabase()">🗑️ Clear Entire Database</button>
             </div>
         </div>`;
+    }
+
+    else if(view==="inventory") {
+        contentHtml = renderInventoryView();
     }
 
     // ── Leave Modal ──

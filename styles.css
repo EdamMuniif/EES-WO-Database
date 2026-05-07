@@ -1076,3 +1076,179 @@
     .task-summary-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .manpower-metrics-v4 { grid-template-columns: 1fr; }
 }
+
+/* ── Inventory page (Phase 1A) ─────────────────────────────────── */
+.inventory-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-bottom: 30px;
+}
+.inv-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+.inv-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.inv-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+.inv-search-input {
+    flex: 1;
+    min-width: 240px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+}
+.inv-search-input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+}
+.inv-filters {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.inv-unit-select {
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+}
+
+.inv-table-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: auto;
+    max-height: 60vh;
+}
+.inv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.inv-table thead {
+    position: sticky;
+    top: 0;
+    background: var(--card);
+    z-index: 2;
+}
+.inv-table th {
+    text-align: left;
+    padding: 12px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+.inv-th-sortable { cursor: pointer; user-select: none; }
+.inv-th-sortable:hover { color: var(--blue); }
+.inv-th-num { text-align: right; }
+.inv-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+.inv-table tbody tr:hover { background: rgba(10, 132, 255, 0.04); }
+.inv-cell-id {
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 12px;
+    color: var(--blue);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.inv-cell-name { min-width: 240px; }
+.inv-name-main { font-weight: 600; color: var(--text); }
+.inv-name-search { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.inv-cell-unit {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.inv-cell-num { text-align: right; font-variant-numeric: tabular-nums; }
+.inv-cell-detail { color: var(--muted); font-size: 12px; }
+.inv-status-badge {
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.inv-status-avail { background: rgba(50, 215, 75, 0.15); color: var(--green); }
+.inv-status-unavail { background: rgba(255, 59, 48, 0.15); color: var(--red); }
+
+.inv-empty-row {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+}
+.inv-pager {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+.inv-pager-info {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.inventory-empty-card {
+    text-align: center;
+    padding: 60px 24px;
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: 14px;
+    margin-top: 20px;
+}
+.inventory-empty-card code {
+    background: rgba(10, 132, 255, 0.1);
+    color: var(--blue);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 12px;
+}
+
+@media (max-width: 768px) {
+    .inv-header { flex-direction: column; align-items: stretch; }
+    .inv-table-wrap { max-height: none; }
+    .inv-table th, .inv-table td { padding: 8px 10px; }
+    .inv-cell-detail { font-size: 11px; }
+    .inv-search-input { width: 100%; }
+}
